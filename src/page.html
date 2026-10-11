@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>損益分析中心｜品牌加辣餐飲顧問</title>
+<style>
+/*BASE_CSS*/
+/* ---- site shell: sign-in card, status screens, account and admin pages ---- */
+body{margin:0}
+[hidden]{display:none!important}
+.center{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px}
+.gate{width:100%;max-width:440px;display:flex;flex-direction:column;gap:12px;padding:24px}
+.gate h1{font-size:20px;margin:0;text-wrap:balance}
+.gate p{margin:0}
+.brandtop{font-weight:700;font-size:20px}
+.brandtop small{display:block;font-weight:400;font-size:13px;color:var(--muted);margin-top:2px}
+.col{display:flex;flex-direction:column;gap:10px}
+.col label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--ink2)}
+.col label.chk{flex-direction:row;align-items:center;gap:8px;font-size:13px;color:var(--ink)}
+.seg.full{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+.seg.full button{padding:7px 4px}
+.steps{margin:0;padding-left:20px;color:var(--ink2);font-size:13px}
+.steps li{margin:2px 0}
+.msg{font-size:13px;color:var(--ink);min-height:1.3em;overflow-wrap:anywhere}
+.units{display:flex;flex-direction:column;gap:6px;border:1px solid var(--grid);border-radius:8px;padding:10px}
+.units label{display:flex;flex-direction:row;gap:8px;align-items:center;font-size:13px;color:var(--ink)}
+.units .sub1{padding-left:24px}
+.units .cl{font-size:12px;color:var(--muted);margin-top:4px}
+.tag.g{background:var(--good-bg);color:var(--ink)} .tag.y{background:var(--warn-bg);color:var(--ink)} .tag.r{background:var(--crit-bg);color:var(--ink)}
+.sidefoot .lk{font-size:12px;font-weight:400}
+.alert.n{background:var(--wash)}
+.hdr{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:flex-end;justify-content:space-between}
+</style>
+<script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<div class="center" id="scrLoad"><div class="card gate">
+  <div class="brandtop">損益分析中心<small>品牌加辣餐飲顧問工作室</small></div>
+  <p class="msg" id="loadMsg" role="status">載入中…</p>
+  <div class="form" id="loadActs" hidden><button class="btn pri" type="button" id="btnRetry">再試一次</button><button class="btn" type="button" data-out>登出</button></div>
+</div></div>
+
+<div class="center" id="scrAuth" hidden><div class="card gate">
+  <div class="brandtop">損益分析中心<small>品牌加辣餐飲顧問工作室</small></div>
+  <div class="seg full" role="group" aria-label="登入、註冊或忘記密碼">
+    <button type="button" id="tabIn" aria-pressed="true">登入</button><button type="button" id="tabUp" aria-pressed="false">註冊</button><button type="button" id="tabFg" aria-pressed="false">忘記密碼</button>
+  </div>
+  <p class="sub" id="auHint" style="margin:0"></p>
+  <form id="fAuth" class="col">
+    <label id="auNameL" hidden>店名或公司名稱<input id="auName" maxlength="60" autocomplete="organization"></label>
+    <label>Email<input id="auEmail" type="email" required autocomplete="username" inputmode="email"></label>
+    <label id="auPassL">密碼<input id="auPass" type="password" minlength="8" autocomplete="current-password"></label>
+    <label class="chk" id="auShowL"><input type="checkbox" id="auShow">顯示密碼</label>
+    <button class="btn pri" type="submit" id="auBtn">登入</button>
+  </form>
+  <p class="msg" id="auMsg" role="status"></p>
+  <div><button class="btn sm" type="button" id="auResend" hidden>重寄驗證信</button></div>
+  <p class="note" style="margin:0">這裡是給餐飲業主查看自己損益儀表板的地方。註冊後需要顧問開通才能使用，開通時會用 Email 通知你。</p>
+</div></div>
+
+<div class="center" id="scrReset" hidden><div class="card gate">
+  <h1>設定新密碼</h1>
+  <p class="sub" style="margin:0">請輸入一組新的密碼（至少 8 個字），儲存後會直接登入。</p>
+  <form id="fReset" class="col">
+    <label>新密碼<input id="rsPass" type="password" minlength="8" required autocomplete="new-password"></label>
+    <label class="chk"><input type="checkbox" id="rsShow">顯示密碼</label>
+    <button class="btn pri" type="submit" id="rsBtn">儲存新密碼</button>
+  </form>
+  <p class="msg" id="rsMsg" role="status"></p>
+</div></div>
+
+<div class="center" id="scrGate" hidden><div class="card gate">
+  <h1 id="gTitle"></h1>
+  <p id="gText"></p>
+  <ol class="steps" id="gSteps"></ol>
+  <div class="form"><button class="btn pri" type="button" id="gReload">重新檢查</button><button class="btn" type="button" data-out>登出</button></div>
+  <p class="note" id="gWho" style="margin:0"></p>
+</div></div>
+
+<div class="app" id="app" hidden>
+<nav class="side" aria-label="功能列">
+  <div class="brand">損益分析中心<small>品牌加辣餐飲顧問工作室</small></div>
+  <select class="scsel" id="scSel" aria-label="檢視範圍"></select>
+  <div class="navh" id="navScope"></div>
+  <button class="nav" type="button" data-pg="home">儀表板</button>
+  <button class="nav" type="button" data-pg="account">我的帳號</button>
+  <div class="navh" id="navAdminH" hidden>後台</div>
+  <button class="nav" type="button" data-pg="admin" id="navAdmin" hidden>帳號與授權<span class="n" id="nPend"></span></button>
+  <div class="sidefoot"><span id="sideWho"></span><br><button class="lk" type="button" data-out>登出</button></div>
+</nav>
+<main>
+<div class="alerts" id="alerts" hidden></div>
+
+<div class="page" id="pg-home"><div class="wrap">
+  <header class="hdr">
+    <div><h1 id="dashTitle">損益儀表板</h1><p><span id="bmLabel"></span>　金額單位：新台幣</p></div>
+  </header>
+  <section class="card" id="dashEmpty" hidden><h2>這個範圍還沒有損益資料</h2><p class="sub" id="dashEmptyTxt" style="margin:0"></p></section>
+  <div class="stack" id="dashBody">
+  <div class="controls">
+    <div class="grp"><span class="lbl">期間</span><div class="seg" id="segMonth" role="group" aria-label="期間"></div></div>
+    <div class="grp"><span class="lbl">口徑</span><div class="seg" id="segAdj" role="group" aria-label="口徑">
+      <button id="adjOff" type="button" aria-pressed="true">帳面</button><button id="adjOn" type="button" aria-pressed="false">還原後</button></div></div>
+    <div class="grp"><button class="btn" id="btnRefresh" type="button">重新整理資料</button><button class="btn" id="btnExport" type="button">匯出 Excel</button><span class="status" id="status" role="status"></span></div>
+  </div>
+
+  <section class="kpis" id="kpis"></section>
+  <section class="lights" id="lights"></section>
+  <p class="note" style="margin:0">燈號基準是業界一般參考值，由顧問依你的業態設定。亮紅燈代表「值得追問」，不代表一定有問題；原因要對照現場狀況才能確定。</p>
+
+  <div class="two">
+    <section class="card"><h2 id="tRev"></h2><p class="sub">各通路每月營業收入。點月份可切換期間。</p>
+      <div class="legend" id="lgRev"></div><div class="chart" id="cRev"></div></section>
+    <section class="card"><h2 id="tNet"></h2><p class="sub">每月營業淨利。往下代表虧損。</p>
+      <div class="chart" id="cNet"></div></section>
+  </div>
+
+  <section class="card"><h2 id="tWf"></h2><p class="sub" id="sWf"></p><div class="chart" id="cWf"></div></section>
+
+  <div class="two">
+    <section class="card"><h2 id="tBe"></h2><p class="sub">兩條線交叉的地方就是損益兩平點：賣到這裡才不用自掏腰包。</p>
+      <div class="legend"><span><i style="background:var(--s1)"></i>營業收入</span><span><i style="background:var(--s2)"></i>總成本（固定＋變動）</span></div>
+      <div class="chart" id="cBe"></div></section>
+    <section class="card"><h2 id="tCh"></h2><p class="sub">每賣 100 元，扣掉食材包材與平台費用後留下多少（尚未扣人事與租金）。</p>
+      <div class="chart" id="cCh"></div><div class="tblwrap" style="margin-top:8px"><table id="tblCh"></table></div></section>
+  </div>
+
+  <section class="card"><h2>明細表</h2><p class="sub" id="sTbl"></p><div class="tblwrap"><table id="tbl"></table></div>
+    <p class="note" id="adjNote"></p>
+    <p class="note" id="calcNote"></p>
+  </section>
+  </div>
+</div></div>
+
+<div class="page" id="pg-account" hidden><div class="wrap">
+  <div class="pgh"><h1>我的帳號</h1><p>你的登入資料、使用期限，以及可以查看的品牌。</p></div>
+  <section class="card"><h2>帳號資料</h2><p class="sub">資料有誤或要調整查看範圍，請與你的顧問聯絡。</p><dl class="kv" id="kvMe"></dl>
+    <div class="form" style="margin-top:14px"><button class="btn" type="button" data-out>登出</button></div></section>
+  <section class="card"><h2>變更密碼</h2><p class="sub">至少 8 個字。儲存後，下次請用新密碼登入。</p>
+    <form class="form" id="fPw"><label class="grow">新密碼<input id="pwNew" type="password" minlength="8" required autocomplete="new-password"></label>
+      <button class="btn pri" type="submit" id="pwBtn">儲存新密碼</button></form>
+    <p class="msg" id="pwMsg" role="status" style="margin:8px 0 0"></p></section>
+</div></div>
+
+<div class="page" id="pg-admin" hidden><div class="wrap">
+  <div class="pgh"><h1>帳號與授權</h1><p>業主註冊後會出現在這裡。開通、決定他能看哪些品牌、設定到期日、停權，都在這一頁。</p></div>
+  <section class="card"><h2 id="tUsers">帳號清單</h2><p class="sub">等待開通的排在最上面。開通與停權時，系統會自動寄信通知對方。</p><div class="list" id="lUsers"></div></section>
+  <section class="card" id="edCard" hidden><h2 id="edTitle">設定</h2><p class="sub" id="edSub"></p>
+    <form id="fEd"><div class="formgrid">
+      <label>狀態<select id="eStatus"><option value="pending">待開通</option><option value="active">使用中（開通）</option><option value="suspended">停權</option><option value="rejected">不開通</option></select></label>
+      <label>到期日（留空＝不限期）<input id="eExp" type="date"></label>
+      <label>權限<select id="eAccess"><option value="view">只能看</option><option value="edit">可以交資料（第二階段上傳功能啟用後才有作用）</option></select></label>
+      <label>備註（只有你看得到）<input id="eNote" maxlength="500"></label>
+      <div class="full"><div class="lbl" style="margin-bottom:4px">可以看的品牌（勾「整個品牌」就包含它之後新增的分店）</div><div class="units" id="eUnits"></div></div>
+    </div>
+    <div class="form" style="margin-top:14px"><button class="btn pri" type="submit" id="edSave">儲存</button><button class="btn" type="button" id="edCancel">取消</button></div>
+    <p class="msg" id="edMsg" role="status" style="margin:8px 0 0"></p></form></section>
+  <section class="card"><h2>最近寄出的系統信</h2><p class="sub">最多顯示 10 封。對方說沒收到信時，先看這裡有沒有寄出紀錄，再請他找垃圾信匣。</p><div class="list" id="lMail"></div></section>
+</div></div>
+</main>
+</div>
+
+<script>
+(function(){
+"use strict";
+/*CORE_JS*/
+/*APP_JS*/
+})();
+</script>
+</body>
+</html>
