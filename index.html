@@ -178,6 +178,10 @@ body{margin:0}
 .tag.g{background:var(--good-bg);color:var(--ink)} .tag.y{background:var(--warn-bg);color:var(--ink)} .tag.r{background:var(--crit-bg);color:var(--ink)}
 .sidefoot .lk{font-size:12px;font-weight:400}
 .alert.n{background:var(--wash)}
+.navout{margin-top:6px;border:1px solid var(--ring)}
+.pgh .back{margin-bottom:8px}
+#mPrev:disabled,#mNext:disabled{opacity:.4;cursor:default}
+@media (max-width:820px){.navout{margin:0 0 0 auto;flex:none}}
 .hdr{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:flex-end;justify-content:space-between}
 </style>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
@@ -237,7 +241,8 @@ body{margin:0}
   <button class="nav" type="button" data-pg="account">我的帳號</button>
   <div class="navh" id="navAdminH" hidden>後台</div>
   <button class="nav" type="button" data-pg="admin" id="navAdmin" hidden>帳號與授權<span class="n" id="nPend"></span></button>
-  <div class="sidefoot"><span id="sideWho"></span><br><button class="lk" type="button" data-out>登出</button></div>
+  <div class="sidefoot"><span id="sideWho"></span></div>
+  <button class="nav navout" type="button" data-out>登出</button>
 </nav>
 <main>
 <div class="alerts" id="alerts" hidden></div>
@@ -249,7 +254,7 @@ body{margin:0}
   <section class="card" id="dashEmpty" hidden><h2>這個範圍還沒有損益資料</h2><p class="sub" id="dashEmptyTxt" style="margin:0"></p></section>
   <div class="stack" id="dashBody">
   <div class="controls">
-    <div class="grp"><span class="lbl">期間</span><div class="seg" id="segMonth" role="group" aria-label="期間"></div></div>
+    <div class="grp"><span class="lbl">期間</span><button class="btn sm" type="button" id="mPrev">‹ 上個月</button><div class="seg" id="segMonth" role="group" aria-label="期間"></div><button class="btn sm" type="button" id="mNext">下個月 ›</button></div>
     <div class="grp"><span class="lbl">口徑</span><div class="seg" id="segAdj" role="group" aria-label="口徑">
       <button id="adjOff" type="button" aria-pressed="true">帳面</button><button id="adjOn" type="button" aria-pressed="false">還原後</button></div></div>
     <div class="grp"><button class="btn" id="btnRefresh" type="button">重新整理資料</button><button class="btn" id="btnExport" type="button">匯出 Excel</button><span class="status" id="status" role="status"></span></div>
@@ -284,7 +289,7 @@ body{margin:0}
 </div></div>
 
 <div class="page" id="pg-account" hidden><div class="wrap">
-  <div class="pgh"><h1>我的帳號</h1><p>你的登入資料、使用期限，以及可以查看的品牌。</p></div>
+  <div class="pgh"><button class="btn sm back" type="button" data-back>‹ 返回</button><h1>我的帳號</h1><p>你的登入資料、使用期限，以及可以查看的品牌。</p></div>
   <section class="card"><h2>帳號資料</h2><p class="sub">資料有誤或要調整查看範圍，請與你的顧問聯絡。</p><dl class="kv" id="kvMe"></dl>
     <div class="form" style="margin-top:14px"><button class="btn" type="button" data-out>登出</button></div></section>
   <section class="card"><h2>變更密碼</h2><p class="sub">至少 8 個字。儲存後，下次請用新密碼登入。</p>
@@ -294,7 +299,7 @@ body{margin:0}
 </div></div>
 
 <div class="page" id="pg-admin" hidden><div class="wrap">
-  <div class="pgh"><h1>帳號與授權</h1><p>業主註冊後會出現在這裡。開通、決定他能看哪些品牌、設定到期日、停權，都在這一頁。</p></div>
+  <div class="pgh"><button class="btn sm back" type="button" data-back>‹ 返回</button><h1>帳號與授權</h1><p>業主註冊後會出現在這裡。開通、決定他能看哪些品牌、設定到期日、停權，都在這一頁。</p></div>
   <section class="card"><h2 id="tUsers">帳號清單</h2><p class="sub">等待開通的排在最上面。開通與停權時，系統會自動寄信通知對方。</p><div class="list" id="lUsers"></div></section>
   <section class="card" id="edCard" hidden><h2 id="edTitle">設定</h2><p class="sub" id="edSub"></p>
     <form id="fEd"><div class="formgrid">
@@ -682,7 +687,7 @@ async function resetSubmit(ev){
   try{var r=await sb.auth.updateUser({password:$("rsPass").value});if(r.error)throw r.error;$("rsPass").value="";$("rsMsg").textContent="";RECOVER=false;route(true)}
   catch(e){$("rsMsg").textContent=errText(e)}finally{$("rsBtn").disabled=false}
 }
-async function signOut(){try{await sb.auth.signOut()}catch(e){}USER=null;ME=null;CUR=null;S.rows=[];ACC=[];PROFS=[];MAIL=[];BR={};show("scrAuth")}
+async function signOut(){try{await sb.auth.signOut()}catch(e){}try{history.replaceState(null,"",location.pathname+location.search)}catch(e){}USER=null;ME=null;CUR=null;S.rows=[];ACC=[];PROFS=[];MAIL=[];BR={};show("scrAuth")}
 
 /* ---------- routing: who is this, and may they come in ---------- */
 var routing=false,again=false;
@@ -785,18 +790,37 @@ function renderShell(){
   box.textContent="";box.hidden=!A.length;
   A.forEach(function(a){var b=h("button","alert "+a.lv);b.type="button";b.innerHTML=ICON[a.lv];b.appendChild(h("span",null,a.x));b.appendChild(h("em",null,"前往 ›"));b.addEventListener("click",function(){go(a.go)});box.appendChild(b)});
 }
-function go(pg){
-  if(pg==="admin"&&!isAdmin())pg="home";if(!$("pg-"+pg))pg="home";PG=pg;
+/* every page or month change gets its own browser-history entry, so the phone's or browser's back button steps back inside the site */
+var HDEPTH=0;
+function hashOf(){return "#"+PG+(PG==="home"&&S.month!=="ALL"?"/"+S.month:"")}
+function remember(how){
+  var url=location.pathname+location.search+hashOf();
+  if(how==="push"){if(location.hash===hashOf())return;HDEPTH++;history.pushState({plc:1,d:HDEPTH},"",url)}
+  else history.replaceState({plc:1,d:HDEPTH},"",url);
+}
+function readHash(){
+  var m=/^#(home|account|admin)(?:\/(\d{4}-\d{2}))?$/.exec(location.hash||"");
+  return m?{pg:m[1],month:m[2]||"ALL"}:null;
+}
+function goBack(){if(history.state&&history.state.plc&&history.state.d>0)history.back();else go("home")}
+function go(pg,fromHist){
+  if(pg==="admin"&&!isAdmin())pg="home";if(!$("pg-"+pg))pg="home";
+  var changed=pg!==PG;PG=pg;
   Array.prototype.forEach.call(document.querySelectorAll(".page"),function(p){p.hidden=p.id!=="pg-"+pg});
   Array.prototype.forEach.call(document.querySelectorAll("button.nav"),function(b){if(b.dataset.pg===pg)b.setAttribute("aria-current","page");else b.removeAttribute("aria-current")});
-  lsSet("plc_pg",pg);renderAll();window.scrollTo(0,0);
+  lsSet("plc_pg",pg);renderAll();if(!fromHist)remember(changed?"push":"replace");window.scrollTo(0,0);
 }
 function renderAll(){renderShell();if(PG==="home")renderHome();else if(PG==="account")renderAccount();else if(PG==="admin")renderAdmin()}
-function setMonth(m){S.month=S.month===m&&m!=="ALL"?"ALL":m;lsSet("plc_month",S.month);renderAll()}
+function setMonth(m){S.month=S.month===m&&m!=="ALL"?"ALL":m;lsSet("plc_month",S.month);renderAll();remember("push")}
+var MONTHS=[];
+function stepMonth(k){
+  if(!MONTHS.length)return;var i=S.month==="ALL"?(k<0?MONTHS.length:-1):MONTHS.indexOf(S.month),j=i+k;
+  if(j<0||j>=MONTHS.length)return;setMonth(MONTHS[j]);
+}
 function enterApp(){
   var sc=lsGet("plc_sc");if(sc)S.sc=sc;var sm=lsGet("plc_month");if(sm)S.month=sm;
-  var pg=location.hash==="#admin"?"admin":(lsGet("plc_pg")||"home");
-  show("app");go(pg);
+  var hs=readHash(),pg=hs?hs.pg:(lsGet("plc_pg")||"home");if(hs&&hs.pg==="home")S.month=hs.month;
+  HDEPTH=0;PG="";show("app");go(pg,true);remember("replace");
 }
 function cfgFor(bid){var d=BR[bid];return d?normCfg(d):normCfg({label:"顧問尚未設定這個品牌的燈號基準，暫以通用門檻顯示"})}
 
@@ -808,6 +832,8 @@ function renderHome(){
   CFG=cfgFor(p.bid);setCats(rows);
   var D=build(rows,S.adj),n=D.months.length;
   if(S.month!=="ALL"&&D.months.indexOf(S.month)<0)S.month="ALL";
+  MONTHS=D.months;var mi=D.months.indexOf(S.month);
+  $("mPrev").disabled=n<2||mi===0;$("mNext").disabled=n<2||S.month==="ALL"||mi===n-1;
   $("dashTitle").textContent=titleOf(p)+"　損益儀表板";
   $("bmLabel").textContent=CFG.label+"　資料期間："+D.months[0]+(n>1?" 到 "+D.months[n-1]:"");
   var seg=$("segMonth");seg.textContent="";
@@ -978,7 +1004,15 @@ function boot(){
   $("fReset").addEventListener("submit",resetSubmit);$("fPw").addEventListener("submit",pwSubmit);
   $("btnRetry").addEventListener("click",function(){route(true)});$("gReload").addEventListener("click",function(){route(true)});
   document.addEventListener("click",function(e){var t=e.target&&e.target.closest?e.target.closest("[data-out]"):null;if(t)signOut()});
-  Array.prototype.forEach.call(document.querySelectorAll("button.nav"),function(b){b.addEventListener("click",function(){go(b.dataset.pg)})});
+  Array.prototype.forEach.call(document.querySelectorAll("button.nav[data-pg]"),function(b){b.addEventListener("click",function(){go(b.dataset.pg)})});
+  document.addEventListener("click",function(e){var t=e.target&&e.target.closest?e.target.closest("[data-back]"):null;if(t)goBack()});
+  $("mPrev").addEventListener("click",function(){stepMonth(-1)});$("mNext").addEventListener("click",function(){stepMonth(1)});
+  window.addEventListener("popstate",function(e){
+    if($("app").hidden)return;var hs=readHash();if(!hs)return;
+    HDEPTH=e.state&&e.state.plc?e.state.d:0;
+    if(hs.pg==="home"){S.month=hs.month;lsSet("plc_month",S.month)}
+    go(hs.pg,true);
+  });
   $("scSel").addEventListener("change",function(){S.sc=$("scSel").value;S.month="ALL";lsSet("plc_sc",S.sc);go("home")});
   $("adjOff").addEventListener("click",function(){S.adj=false;renderAll()});$("adjOn").addEventListener("click",function(){S.adj=true;renderAll()});
   $("btnRefresh").addEventListener("click",refreshData);$("btnExport").addEventListener("click",exportXlsx);

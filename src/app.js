@@ -67,7 +67,7 @@ async function resetSubmit(ev){
   try{var r=await sb.auth.updateUser({password:$("rsPass").value});if(r.error)throw r.error;$("rsPass").value="";$("rsMsg").textContent="";RECOVER=false;route(true)}
   catch(e){$("rsMsg").textContent=errText(e)}finally{$("rsBtn").disabled=false}
 }
-async function signOut(){try{await sb.auth.signOut()}catch(e){}USER=null;ME=null;CUR=null;S.rows=[];ACC=[];PROFS=[];MAIL=[];BR={};show("scrAuth")}
+async function signOut(){try{await sb.auth.signOut()}catch(e){}try{history.replaceState(null,"",location.pathname+location.search)}catch(e){}USER=null;ME=null;CUR=null;S.rows=[];ACC=[];PROFS=[];MAIL=[];BR={};show("scrAuth")}
 
 /* ---------- routing: who is this, and may they come in ---------- */
 var routing=false,again=false;
@@ -170,18 +170,37 @@ function renderShell(){
   box.textContent="";box.hidden=!A.length;
   A.forEach(function(a){var b=h("button","alert "+a.lv);b.type="button";b.innerHTML=ICON[a.lv];b.appendChild(h("span",null,a.x));b.appendChild(h("em",null,"前往 ›"));b.addEventListener("click",function(){go(a.go)});box.appendChild(b)});
 }
-function go(pg){
-  if(pg==="admin"&&!isAdmin())pg="home";if(!$("pg-"+pg))pg="home";PG=pg;
+/* every page or month change gets its own browser-history entry, so the phone's or browser's back button steps back inside the site */
+var HDEPTH=0;
+function hashOf(){return "#"+PG+(PG==="home"&&S.month!=="ALL"?"/"+S.month:"")}
+function remember(how){
+  var url=location.pathname+location.search+hashOf();
+  if(how==="push"){if(location.hash===hashOf())return;HDEPTH++;history.pushState({plc:1,d:HDEPTH},"",url)}
+  else history.replaceState({plc:1,d:HDEPTH},"",url);
+}
+function readHash(){
+  var m=/^#(home|account|admin)(?:\/(\d{4}-\d{2}))?$/.exec(location.hash||"");
+  return m?{pg:m[1],month:m[2]||"ALL"}:null;
+}
+function goBack(){if(history.state&&history.state.plc&&history.state.d>0)history.back();else go("home")}
+function go(pg,fromHist){
+  if(pg==="admin"&&!isAdmin())pg="home";if(!$("pg-"+pg))pg="home";
+  var changed=pg!==PG;PG=pg;
   Array.prototype.forEach.call(document.querySelectorAll(".page"),function(p){p.hidden=p.id!=="pg-"+pg});
   Array.prototype.forEach.call(document.querySelectorAll("button.nav"),function(b){if(b.dataset.pg===pg)b.setAttribute("aria-current","page");else b.removeAttribute("aria-current")});
-  lsSet("plc_pg",pg);renderAll();window.scrollTo(0,0);
+  lsSet("plc_pg",pg);renderAll();if(!fromHist)remember(changed?"push":"replace");window.scrollTo(0,0);
 }
 function renderAll(){renderShell();if(PG==="home")renderHome();else if(PG==="account")renderAccount();else if(PG==="admin")renderAdmin()}
-function setMonth(m){S.month=S.month===m&&m!=="ALL"?"ALL":m;lsSet("plc_month",S.month);renderAll()}
+function setMonth(m){S.month=S.month===m&&m!=="ALL"?"ALL":m;lsSet("plc_month",S.month);renderAll();remember("push")}
+var MONTHS=[];
+function stepMonth(k){
+  if(!MONTHS.length)return;var i=S.month==="ALL"?(k<0?MONTHS.length:-1):MONTHS.indexOf(S.month),j=i+k;
+  if(j<0||j>=MONTHS.length)return;setMonth(MONTHS[j]);
+}
 function enterApp(){
   var sc=lsGet("plc_sc");if(sc)S.sc=sc;var sm=lsGet("plc_month");if(sm)S.month=sm;
-  var pg=location.hash==="#admin"?"admin":(lsGet("plc_pg")||"home");
-  show("app");go(pg);
+  var hs=readHash(),pg=hs?hs.pg:(lsGet("plc_pg")||"home");if(hs&&hs.pg==="home")S.month=hs.month;
+  HDEPTH=0;PG="";show("app");go(pg,true);remember("replace");
 }
 function cfgFor(bid){var d=BR[bid];return d?normCfg(d):normCfg({label:"顧問尚未設定這個品牌的燈號基準，暫以通用門檻顯示"})}
 
@@ -193,6 +212,8 @@ function renderHome(){
   CFG=cfgFor(p.bid);setCats(rows);
   var D=build(rows,S.adj),n=D.months.length;
   if(S.month!=="ALL"&&D.months.indexOf(S.month)<0)S.month="ALL";
+  MONTHS=D.months;var mi=D.months.indexOf(S.month);
+  $("mPrev").disabled=n<2||mi===0;$("mNext").disabled=n<2||S.month==="ALL"||mi===n-1;
   $("dashTitle").textContent=titleOf(p)+"　損益儀表板";
   $("bmLabel").textContent=CFG.label+"　資料期間："+D.months[0]+(n>1?" 到 "+D.months[n-1]:"");
   var seg=$("segMonth");seg.textContent="";
@@ -363,7 +384,15 @@ function boot(){
   $("fReset").addEventListener("submit",resetSubmit);$("fPw").addEventListener("submit",pwSubmit);
   $("btnRetry").addEventListener("click",function(){route(true)});$("gReload").addEventListener("click",function(){route(true)});
   document.addEventListener("click",function(e){var t=e.target&&e.target.closest?e.target.closest("[data-out]"):null;if(t)signOut()});
-  Array.prototype.forEach.call(document.querySelectorAll("button.nav"),function(b){b.addEventListener("click",function(){go(b.dataset.pg)})});
+  Array.prototype.forEach.call(document.querySelectorAll("button.nav[data-pg]"),function(b){b.addEventListener("click",function(){go(b.dataset.pg)})});
+  document.addEventListener("click",function(e){var t=e.target&&e.target.closest?e.target.closest("[data-back]"):null;if(t)goBack()});
+  $("mPrev").addEventListener("click",function(){stepMonth(-1)});$("mNext").addEventListener("click",function(){stepMonth(1)});
+  window.addEventListener("popstate",function(e){
+    if($("app").hidden)return;var hs=readHash();if(!hs)return;
+    HDEPTH=e.state&&e.state.plc?e.state.d:0;
+    if(hs.pg==="home"){S.month=hs.month;lsSet("plc_month",S.month)}
+    go(hs.pg,true);
+  });
   $("scSel").addEventListener("change",function(){S.sc=$("scSel").value;S.month="ALL";lsSet("plc_sc",S.sc);go("home")});
   $("adjOff").addEventListener("click",function(){S.adj=false;renderAll()});$("adjOn").addEventListener("click",function(){S.adj=true;renderAll()});
   $("btnRefresh").addEventListener("click",refreshData);$("btnExport").addEventListener("click",exportXlsx);
