@@ -52,7 +52,7 @@ function mlabel(m){return +m.slice(5)+" 月"}
 
 /* ---------- data model ---------- */
 function build(rows,adj){
-  var M={},months=[];
+  var M={},months=[],A={};
   rows.forEach(function(r){
     if(!M[r.m]){M[r.m]={};months.push(r.m)}
     var c=r.c;
@@ -61,6 +61,7 @@ function build(rows,adj){
     if(r.s==="營業費用"&&COST.indexOf(c)<0)c="一般營運費用";
     if(adj&&r.y)return;
     M[r.m][c]=(M[r.m][c]||0)+r.a;
+    var ac=A[c]||(A[c]={}),an=ac[r.n]||(ac[r.n]={});an[r.m]=(an[r.m]||0)+r.a;
   });
   months.sort();
   if(adj){
@@ -72,7 +73,7 @@ function build(rows,adj){
       M[m]["營業稅"]=revAll?tax*rev(M[m])/revAll:0;
     });
   }
-  return {M:M,months:months};
+  return {M:M,months:months,A:A};
 }
 function rev(o){var t=o["其他收入"]||0;REV.forEach(function(c){t+=o[c]||0});return t}
 function avg(D){var o={},n=D.months.length;D.months.forEach(function(m){for(var c in D.M[m])o[c]=(o[c]||0)+D.M[m][c]/n});return o}
@@ -273,26 +274,47 @@ function renderCh(D){
   var t=$("tblCh");t.textContent="";var hd=t.insertRow();["通路","營收","占比","平台費用","有效抽成"].forEach(function(x){var th=document.createElement("th");th.textContent=x;hd.appendChild(th)});
   rows.forEach(function(r){var tr=t.insertRow();[REVLBL[r.c],full(r.r),pct(r.r/m.R),r.f?full(r.f):"—",r.f?pct(r.f/r.r):"—"].forEach(function(x){tr.insertCell().textContent=x})});
 }
+var TBLOPEN={};
 function renderTable(D){
-  var t=$("tbl");t.textContent="";var n=D.months.length;
+  var t=$("tbl");t.textContent="";var n=D.months.length,AV=avg(D),RV=rev(AV);
   var hd=document.createElement("thead"),hr=document.createElement("tr");hd.appendChild(hr);t.appendChild(hd);
-  ["科目"].concat(D.months.map(mlabel)).concat(["合計","月平均"]).forEach(function(x,i){var th=document.createElement("th");th.textContent=x;if(i>0&&D.months[i-1]===S.month)th.className="sel";hr.appendChild(th)});
+  var th0=function(txt,cls,sub){var th=document.createElement("th");th.textContent=txt;if(cls)th.className=cls;if(sub)th.appendChild(h("small",null,sub));hr.appendChild(th)};
+  th0("科目");th0("月平均","avg","占營收");D.months.forEach(function(m){th0(mlabel(m),m===S.month?"sel":"","占營收")});th0("合計");
   var tb=document.createElement("tbody");t.appendChild(tb);
-  function row(name,fn,tot,isPct){var tr=document.createElement("tr");if(tot)tr.className="tot";tr.insertCell().textContent=name;var sum=0;
-    D.months.forEach(function(m){var v=fn(D.M[m]);sum+=v;var td=tr.insertCell();td.textContent=isPct?pct(v):full(v);if(m===S.month)td.className="sel"});
-    if(isPct){var a=fn(avg(D));tr.insertCell().textContent=pct(a);tr.insertCell().textContent=pct(a)}else{tr.insertCell().textContent=full(sum);tr.insertCell().textContent=full(sum/n)}
-    tb.appendChild(tr)}
+  /* amount cell with its share of that month's revenue underneath */
+  function cell(tr,v,R,cls){var td=tr.insertCell();td.textContent=full(v);if(R)td.appendChild(h("small",null,pct(v/R)));if(cls)td.className=cls;return td}
+  function row(name,fn,o){o=o||{};var tr=document.createElement("tr");if(o.tot)tr.className="tot";else if(o.cls)tr.className=o.cls;
+    var c0=tr.insertCell();c0.textContent=name;var sum=0;
+    if(o.isPct){var a=fn(AV);tr.insertCell().textContent=pct(a);tr.cells[1].className="avg";D.months.forEach(function(m){var td=tr.insertCell();td.textContent=pct(fn(D.M[m]));if(m===S.month)td.className="sel"});tr.insertCell().textContent=pct(a)}
+    else{D.months.forEach(function(m){sum+=fn(D.M[m])});cell(tr,sum/n,o.noPct?0:RV,"avg");
+      D.months.forEach(function(m){cell(tr,fn(D.M[m]),o.noPct?0:rev(D.M[m]),m===S.month?"sel":"")});cell(tr,sum,0)}
+    tb.appendChild(tr);return tr}
+  function catRow(c,label){
+    var acc=D.A&&!S.adj?D.A[c]:null,names=acc?Object.keys(acc):[];
+    var tr=row(label,function(o){return o[c]||0},{cls:names.length>1||(names.length===1&&names[0]!==c)?"cat"+(TBLOPEN[c]?" open":""):""});
+    if(!/cat/.test(tr.className))return;
+    tr.cells[0].title="點一下看原始科目";
+    tr.cells[0].addEventListener("click",function(){TBLOPEN[c]=!TBLOPEN[c];renderTable(D)});
+    if(!TBLOPEN[c])return;
+    names.sort(function(a,b){var sa=0,sb=0;D.months.forEach(function(m){sa+=acc[a][m]||0;sb+=acc[b][m]||0});return sb-sa}).forEach(function(nm){
+      row(nm,function(o){var m=D.months.filter(function(x){return D.M[x]===o})[0];return m?(acc[nm][m]||0):D.months.reduce(function(s,x){return s+(acc[nm][x]||0)},0)/n},{cls:"acc"})});
+  }
   var cats=REV.slice();if(D.months.some(function(m){return D.M[m]["其他收入"]}))cats.push("其他收入");
-  cats.forEach(function(c){row(REVLBL[c],function(o){return o[c]||0})});
-  row("營業收入合計",rev,true);
-  COST.forEach(function(c){row(c,function(o){return o[c]||0})});
-  row("成本費用合計",function(o){var s=0;COST.forEach(function(c){s+=o[c]||0});return s},true);
-  row("營業淨利",function(o){return met(o).net},true);
-  row("食材＋包材率",function(o){var m=met(o);return m.food/m.R},false,true);
-  row("人事費用率",function(o){var m=met(o);return m.labor/m.R},false,true);
-  row("主要成本率",function(o){var m=met(o);return (m.food+m.labor)/m.R},false,true);
-  row("租金占比",function(o){var m=met(o);return m.rent/m.R},false,true);
-  row("淨利率",function(o){var m=met(o);return m.net/m.R},false,true);
+  cats.forEach(function(c){catRow(c,REVLBL[c])});
+  row("營業收入合計",rev,{tot:true});
+  COST.forEach(function(c){if(D.months.some(function(m){return D.M[m][c]}))catRow(c,c)});
+  row("成本費用合計",function(o){var s=0;COST.forEach(function(c){s+=o[c]||0});return s},{tot:true});
+  row("營業淨利",function(o){return met(o).net},{tot:true});
+  row("食材＋包材率",function(o){var m=met(o);return m.food/m.R},{isPct:true});
+  row("人事費用率",function(o){var m=met(o);return m.labor/m.R},{isPct:true});
+  row("主要成本率",function(o){var m=met(o);return (m.food+m.labor)/m.R},{isPct:true});
+  row("租金占比",function(o){var m=met(o);return m.rent/m.R},{isPct:true});
+  row("水電燃料占比",function(o){var m=met(o);return m.util/m.R},{isPct:true});
+  if(D.months.some(function(m){return met(D.M[m]).deliv})){
+    row("外送占營收",function(o){var m=met(o);return m.deliv/m.R},{isPct:true});
+    row("外送有效抽成",function(o){var m=met(o);return m.deliv?m.plat/m.deliv:NaN},{isPct:true});
+  }
+  row("淨利率",function(o){var m=met(o);return m.net/m.R},{isPct:true});
 
-  $("sTbl").textContent=(S.adj?"還原後口徑":"帳面口徑")+"。比率列的「合計」與「月平均」欄都是以全期間計算。";
+  $("sTbl").textContent=(S.adj?"還原後口徑":"帳面口徑")+"。每個金額下面的小字是占當月營業收入的百分比；「月平均」是 "+n+" 個月平均，比率列的「月平均」與「合計」以全期間計算。"+(S.adj?"":"有 ▸ 的科目點一下可以展開原始科目。");
 }
