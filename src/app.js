@@ -3,7 +3,7 @@
 var SB_URL="https://thxqncpkkzmpktwuvzvz.supabase.co",SB_KEY="sb_publishable_gn13sLmGJzsrv-V9Rmfuxw_OLp6jP4l";
 var WHO="品牌加辣餐飲顧問工作室";
 var sb=null,USER=null,ME=null,CUR=null,RECOVER=false,PG="home";
-var ACC=[],PROFS=[],MAIL=[],SKIPPED=0,LOADED_AT="";
+var ACC=[],PROFS=[],MAIL=[],SKIPPED=0,LOADED_AT="",UPL=[],AMAP=[],FEAT_UP=true;
 var STN={pending:"待開通",active:"使用中",suspended:"停權",rejected:"不開通"},STC={pending:"y",active:"g",suspended:"r",rejected:"r"};
 var SECS=["營業收入","營業成本","營業費用"];
 function REDIR(){return location.origin+location.pathname}
@@ -128,9 +128,15 @@ async function loadData(){
   for(var i=1;i<R.length;i++)if(R[i].error)throw R[i].error;
   var br={};(R[1].data||[]).forEach(function(d){
     if(typeof d.client_name!=="string"||typeof d.brand_name!=="string")return;
-    br[bidOf(d.client_name,d.brand_name)]={cl:d.client_name,br:d.brand_name,hq:!!d.is_hq,type:d.biz_type,bm:d.thresholds||null,vu:d.util_variable_pct,label:d.label||"",annual:Array.isArray(d.annual_accounts)?d.annual_accounts:[]};
+    br[bidOf(d.client_name,d.brand_name)]={cl:d.client_name,br:d.brand_name,hq:!!d.is_hq,type:d.biz_type,bm:d.thresholds||null,vu:d.util_variable_pct,label:d.label||"",unset:!d.label,annual:Array.isArray(d.annual_accounts)?d.annual_accounts:[]};
   });
   BR=br;ACC=R[2].data||[];PROFS=isAdmin()?(R[3].data||[]):[];MAIL=isAdmin()?(R[4].data||[]):[];
+  /* upload records and learned account categories; missing until the upload tables exist, and the rest of the site keeps working without them */
+  UPL=[];AMAP=[];
+  if(canUpload()){
+    var U=await Promise.all([sb.from("pl_uploads").select("*").order("created_at",{ascending:false}).limit(80),sb.from("pl_account_map").select("client_name,account_name,section,category")]);
+    FEAT_UP=!U[0].error&&!U[1].error;if(FEAT_UP){UPL=U[0].data||[];AMAP=U[1].data||[]}
+  }
   var rows=[];SKIPPED=0;
   R[0].forEach(function(s){
     var m=String(s.period_month||"").slice(0,7),cl=s.client_name,brn=s.brand_name,st=s.store_name||"本店",ut=s.unit_type==="總部"?"總部":"門市";
@@ -161,11 +167,15 @@ function renderShell(){
   if(!O.some(function(o){return o.v===S.sc}))S.sc=O.length?O[0].v:"";
   sel.value=S.sc;sel.hidden=O.length<2;
   $("navScope").textContent=O.length?titleOf(curP()):"尚無資料";
-  $("navAdmin").hidden=$("navAdminH").hidden=!isAdmin();
+  $("navAdmin").hidden=$("navAdminH").hidden=$("navReview").hidden=$("navProj").hidden=!isAdmin();$("navUpload").hidden=!canUpload();
+  var nrev=UPL.filter(function(x){return x.status==="review"}).length,nunset=isAdmin()?projList().filter(function(p){return p.unset}).length:0;
+  $("nRev").textContent=isAdmin()&&nrev?String(nrev):"";$("nProj").textContent=nunset?String(nunset):"";
   var pend=PROFS.filter(function(p){return p.status==="pending"}).length;$("nPend").textContent=pend?String(pend):"";
   $("sideWho").textContent=ME?(ME.display_name||ME.email):"";
   var box=$("alerts"),A=[];
   if(isAdmin()&&pend)A.push({lv:"y",x:"有 "+pend+" 個帳號等待開通",go:"admin"});
+  if(isAdmin()&&nrev)A.push({lv:"y",x:"有 "+nrev+" 份上傳的損益表等你確認",go:"review"});
+  if(isAdmin()&&nunset)A.push({lv:"y",x:"有 "+nunset+" 個專案還沒設定業態，燈號暫用預估值",go:"proj"});
   if(ME&&ME.role!=="admin"&&ME.expires_on){var days=Math.round((new Date(ME.expires_on+"T00:00:00")-new Date(today()+"T00:00:00"))/864e5);if(days<=30)A.push({lv:"y",x:"使用期限到 "+ME.expires_on+"，還有 "+days+" 天。需要續用請與顧問聯絡。",go:"account"})}
   box.textContent="";box.hidden=!A.length;
   A.forEach(function(a){var b=h("button","alert "+a.lv);b.type="button";b.innerHTML=ICON[a.lv];b.appendChild(h("span",null,a.x));b.appendChild(h("em",null,"前往 ›"));b.addEventListener("click",function(){go(a.go)});box.appendChild(b)});
@@ -179,18 +189,18 @@ function remember(how){
   else history.replaceState({plc:1,d:HDEPTH},"",url);
 }
 function readHash(){
-  var m=/^#(home|account|admin)(?:\/(\d{4}-\d{2}))?$/.exec(location.hash||"");
+  var m=/^#(home|upload|account|admin|review|proj)(?:\/(\d{4}-\d{2}))?$/.exec(location.hash||"");
   return m?{pg:m[1],month:m[2]||"ALL"}:null;
 }
 function goBack(){if(history.state&&history.state.plc&&history.state.d>0)history.back();else go("home")}
 function go(pg,fromHist){
-  if(pg==="admin"&&!isAdmin())pg="home";if(!$("pg-"+pg))pg="home";
+  if((pg==="admin"||pg==="review"||pg==="proj")&&!isAdmin())pg="home";if(pg==="upload"&&!canUpload())pg="home";if(!$("pg-"+pg))pg="home";
   var changed=pg!==PG;PG=pg;
   Array.prototype.forEach.call(document.querySelectorAll(".page"),function(p){p.hidden=p.id!=="pg-"+pg});
   Array.prototype.forEach.call(document.querySelectorAll("button.nav"),function(b){if(b.dataset.pg===pg)b.setAttribute("aria-current","page");else b.removeAttribute("aria-current")});
   lsSet("plc_pg",pg);renderAll();if(!fromHist)remember(changed?"push":"replace");window.scrollTo(0,0);
 }
-function renderAll(){renderShell();if(PG==="home")renderHome();else if(PG==="account")renderAccount();else if(PG==="admin")renderAdmin()}
+function renderAll(){renderShell();if(PG==="home")renderHome();else if(PG==="account")renderAccount();else if(PG==="admin")renderAdmin();else if(PG==="upload")renderUpload();else if(PG==="review")renderReview();else if(PG==="proj")renderProj()}
 function setMonth(m){S.month=S.month===m&&m!=="ALL"?"ALL":m;lsSet("plc_month",S.month);renderAll();remember("push")}
 var MONTHS=[];
 function stepMonth(k){
@@ -202,7 +212,7 @@ function enterApp(){
   var hs=readHash(),pg=hs?hs.pg:(lsGet("plc_pg")||"home");if(hs&&hs.pg==="home")S.month=hs.month;
   HDEPTH=0;PG="";show("app");go(pg,true);remember("replace");
 }
-function cfgFor(bid){var d=BR[bid];return d?normCfg(d):normCfg({label:"顧問尚未設定這個品牌的燈號基準，暫以通用門檻顯示"})}
+function cfgFor(bid){var d=BR[bid];if(d&&!d.unset)return normCfg(d);var c=normCfg(d||null);c.label="顧問尚未設定這個品牌的業態，燈號暫以火鍋業態預估值顯示";return c}
 
 /* ---------- dashboard ---------- */
 function renderHome(){
@@ -280,7 +290,7 @@ function accText(list){
 function renderAccount(){
   var kv=$("kvMe");kv.textContent="";
   var mine=isAdmin()?"全部品牌（管理員）":accText(ACC.filter(function(a){return a.user_id===ME.user_id}));
-  [["名稱",ME.display_name||"（未填）"],["Email",ME.email],["狀態",STN[ME.status]||ME.status],["使用期限",ME.role==="admin"?"不限期":ME.expires_on?"到 "+ME.expires_on+" 為止":"不限期"],["可以查看",mine],["目前功能","查看儀表板與匯出 Excel"]].forEach(function(r){kv.appendChild(h("dt",null,r[0]));kv.appendChild(h("dd",null,r[1]))});
+  [["名稱",ME.display_name||"（未填）"],["Email",ME.email],["狀態",STN[ME.status]||ME.status],["使用期限",ME.role==="admin"?"不限期":ME.expires_on?"到 "+ME.expires_on+" 為止":"不限期"],["可以查看",mine],["目前功能",canUpload()?"查看儀表板、匯出 Excel、上傳損益表":"查看儀表板與匯出 Excel"]].forEach(function(r){kv.appendChild(h("dt",null,r[0]));kv.appendChild(h("dd",null,r[1]))});
 }
 async function pwSubmit(ev){
   ev.preventDefault();$("pwMsg").textContent="處理中…";$("pwBtn").disabled=true;
@@ -396,7 +406,7 @@ function boot(){
   $("scSel").addEventListener("change",function(){S.sc=$("scSel").value;S.month="ALL";lsSet("plc_sc",S.sc);go("home")});
   $("adjOff").addEventListener("click",function(){S.adj=false;renderAll()});$("adjOn").addEventListener("click",function(){S.adj=true;renderAll()});
   $("btnRefresh").addEventListener("click",refreshData);$("btnExport").addEventListener("click",exportXlsx);
-  $("fEd").addEventListener("submit",saveEdit);$("edCancel").addEventListener("click",closeEdit);
+  $("fEd").addEventListener("submit",saveEdit);initUpload();$("edCancel").addEventListener("click",closeEdit);
   var rz;window.addEventListener("resize",function(){clearTimeout(rz);rz=setTimeout(function(){if(!$("app").hidden&&PG==="home")renderHome()},150)});
   sb.auth.onAuthStateChange(function(ev){
     if(ev==="PASSWORD_RECOVERY"){RECOVER=true;show("scrReset");return}
