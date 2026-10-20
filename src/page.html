@@ -31,10 +31,43 @@ body{margin:0}
 .tag.g{background:var(--good-bg);color:var(--ink)} .tag.y{background:var(--warn-bg);color:var(--ink)} .tag.r{background:var(--crit-bg);color:var(--ink)}
 .sidefoot .lk{font-size:12px;font-weight:400}
 .alert.n{background:var(--wash)}
+.navout{margin-top:6px;border:1px solid var(--ring)}
+.pgh .back{margin-bottom:8px}
+#mPrev:disabled,#mNext:disabled{opacity:.4;cursor:default}
+@media (max-width:820px){.navout{margin:0 0 0 auto;flex:none}}
+.drop{position:relative;display:flex;align-items:center;justify-content:center;text-align:center;border:2px dashed var(--axis);border-radius:10px;padding:22px 12px;cursor:pointer;color:var(--ink2);background:var(--plane)}
+.drop.on{border-color:var(--s1);background:var(--wash)}
+.drop input{position:absolute;width:1px;height:1px;opacity:0}
+.upc{border:1px solid var(--ring);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.upc h3{font-size:14px;margin:0;overflow-wrap:anywhere}
+.upc .row{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:flex-end}
+.chk4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.chk4 div{border:1px solid var(--grid);border-radius:8px;padding:6px 8px;font-size:12px;color:var(--ink2);min-width:0}
+.chk4 b{display:block;font-size:14px;color:var(--ink);font-variant-numeric:tabular-nums}
+@media (max-width:560px){.chk4{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.issues{margin:0;padding-left:18px;font-size:13px}
+.issues li{margin:2px 0}
+.ok{color:var(--good);font-weight:600}
+.bad{color:var(--crit);font-weight:600}
+details>summary{cursor:pointer;font-size:13px;color:var(--ink2)}
+.itbl td:first-child,.itbl th:first-child{text-align:left;white-space:normal;min-width:110px}
+.itbl select{font-size:13px;padding:3px 6px}
+.itbl tr.new td{background:var(--warn-bg)}
+.pjt td:first-child,.pjt th:first-child{text-align:left}
+.pjt input{width:72px;text-align:right}
+td small,th small{display:block;font-size:11px;font-weight:400;color:var(--muted)}
+#tbl td:first-child{text-align:left}
+#tbl tr.cat td:first-child{cursor:pointer}
+#tbl tr.cat td:first-child::before{content:"▸ ";color:var(--muted)}
+#tbl tr.cat.open td:first-child::before{content:"▾ "}
+#tbl tr.acc td{color:var(--ink2);font-size:12px}
+#tbl tr.acc td:first-child{padding-left:26px}
+#tbl td.avg,#tbl th.avg{background:var(--wash)}
 .hdr{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:flex-end;justify-content:space-between}
 </style>
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body>
 
@@ -87,10 +120,14 @@ body{margin:0}
   <select class="scsel" id="scSel" aria-label="檢視範圍"></select>
   <div class="navh" id="navScope"></div>
   <button class="nav" type="button" data-pg="home">儀表板</button>
+  <button class="nav" type="button" data-pg="upload" id="navUpload" hidden>上傳損益表</button>
   <button class="nav" type="button" data-pg="account">我的帳號</button>
   <div class="navh" id="navAdminH" hidden>後台</div>
   <button class="nav" type="button" data-pg="admin" id="navAdmin" hidden>帳號與授權<span class="n" id="nPend"></span></button>
-  <div class="sidefoot"><span id="sideWho"></span><br><button class="lk" type="button" data-out>登出</button></div>
+  <button class="nav" type="button" data-pg="review" id="navReview" hidden>上傳審核<span class="n" id="nRev"></span></button>
+  <button class="nav" type="button" data-pg="proj" id="navProj" hidden>專案燈號設定<span class="n" id="nProj"></span></button>
+  <div class="sidefoot"><span id="sideWho"></span></div>
+  <button class="nav navout" type="button" data-out>登出</button>
 </nav>
 <main>
 <div class="alerts" id="alerts" hidden></div>
@@ -102,7 +139,7 @@ body{margin:0}
   <section class="card" id="dashEmpty" hidden><h2>這個範圍還沒有損益資料</h2><p class="sub" id="dashEmptyTxt" style="margin:0"></p></section>
   <div class="stack" id="dashBody">
   <div class="controls">
-    <div class="grp"><span class="lbl">期間</span><div class="seg" id="segMonth" role="group" aria-label="期間"></div></div>
+    <div class="grp"><span class="lbl">期間</span><button class="btn sm" type="button" id="mPrev">‹ 上個月</button><div class="seg" id="segMonth" role="group" aria-label="期間"></div><button class="btn sm" type="button" id="mNext">下個月 ›</button></div>
     <div class="grp"><span class="lbl">口徑</span><div class="seg" id="segAdj" role="group" aria-label="口徑">
       <button id="adjOff" type="button" aria-pressed="true">帳面</button><button id="adjOn" type="button" aria-pressed="false">還原後</button></div></div>
     <div class="grp"><button class="btn" id="btnRefresh" type="button">重新整理資料</button><button class="btn" id="btnExport" type="button">匯出 Excel</button><span class="status" id="status" role="status"></span></div>
@@ -136,8 +173,50 @@ body{margin:0}
   </div>
 </div></div>
 
+<div class="page" id="pg-upload" hidden><div class="wrap">
+  <div class="pgh"><button class="btn sm back" type="button" data-back>‹ 返回</button><h1>上傳損益表</h1><p>把會計給的月損益表（PDF 或 Excel）放上來，系統會自動讀出每個科目和金額、分好類、和原表總計核對，沒問題就直接更新儀表板，不用手動輸入。</p></div>
+  <section class="card"><h2>1. 這是哪一家店的損益表</h2>
+    <div class="formgrid">
+      <label class="full">品牌／分店<select id="upUnit"></select></label>
+      <label data-newunit hidden>客戶（公司）名稱<input id="upCl" maxlength="60" placeholder="例如：一級棒讚企業社"></label>
+      <label data-newunit hidden>品牌名稱<input id="upBr" maxlength="60" placeholder="例如：一級棒讚"></label>
+      <label data-newunit hidden>分店名稱<input id="upSt" maxlength="60" placeholder="只有一家店就填「本店」"></label>
+      <label data-newunit hidden>類型<select id="upUt"><option value="門市">門市</option><option value="總部">總部</option></select></label>
+    </div></section>
+  <section class="card"><h2>2. 選擇檔案</h2>
+    <p class="sub">一次可以選好幾個月。支援會計軟體印出的 PDF、Excel（.xlsx／.xls）與 CSV；掃描或拍照的 PDF 目前還讀不了。沒有現成檔案，可以<button class="lk" type="button" id="upTpl">下載 Excel 範本</button>照著填。</p>
+    <label class="drop" id="upDrop"><input type="file" id="upFile" multiple accept=".pdf,.xlsx,.xls,.csv"><span>點這裡選檔案，或把檔案拖進這個框</span></label>
+    <div class="stack" id="upList" style="margin-top:12px"></div></section>
+  <section class="card"><h2>上傳紀錄</h2><p class="sub">最近 30 筆。「待確認」的會由顧問看過後建檔。</p><div class="list" id="upHist"></div></section>
+</div></div>
+
+<div class="page" id="pg-review" hidden><div class="wrap">
+  <div class="pgh"><button class="btn sm back" type="button" data-back>‹ 返回</button><h1>上傳審核</h1><p>核對沒過、有新科目、或要取代既有月份的上傳會停在這裡。看過明細、需要的話改一下分類，按「確認建檔」就會寫進儀表板；分類會被記住，下次同一個科目就自動處理。</p></div>
+  <section class="card"><h2 id="tRev">待確認</h2><div class="stack" id="lRev"></div></section>
+  <section class="card"><h2>最近處理過的上傳</h2><div class="list" id="lRevDone"></div></section>
+</div></div>
+
+<div class="page" id="pg-proj" hidden><div class="wrap">
+  <div class="pgh"><button class="btn sm back" type="button" data-back>‹ 返回</button><h1>專案燈號設定</h1><p>每個專案（品牌）一開始用業態的預估門檻；你看過實際狀況後，可以在這裡逐項調整，儀表板與燈號會立刻改用你的設定。</p></div>
+  <section class="card"><h2>選擇專案</h2><div class="list" id="lProj"></div></section>
+  <section class="card" id="pjCard" hidden><h2 id="pjTitle"></h2><p class="sub" id="pjSub"></p>
+    <form id="fPj">
+      <div class="formgrid">
+        <label class="full">業態（決定預估門檻）<select id="pjType"></select></label>
+      </div>
+      <div class="tblwrap" style="margin-top:12px"><table class="pjt" id="pjTbl"></table></div>
+      <div class="formgrid" style="margin-top:12px">
+        <label>水電燃料算變動成本的比例（%）<input id="pjVu" type="number" min="0" max="100" step="1"></label>
+        <label>一年付一次的科目（用「、」分開）<input id="pjAnn" maxlength="300" placeholder="例如：保險費、Ocard年費"></label>
+        <label class="chk full"><input type="checkbox" id="pjHq">這是總部（不是門市）</label>
+      </div>
+      <div class="form" style="margin-top:14px"><button class="btn pri" type="submit" id="pjSave">儲存</button><button class="btn" type="button" id="pjReset">全部恢復成預估值</button></div>
+      <p class="msg" id="pjMsg" role="status" style="margin:8px 0 0"></p>
+    </form></section>
+</div></div>
+
 <div class="page" id="pg-account" hidden><div class="wrap">
-  <div class="pgh"><h1>我的帳號</h1><p>你的登入資料、使用期限，以及可以查看的品牌。</p></div>
+  <div class="pgh"><button class="btn sm back" type="button" data-back>‹ 返回</button><h1>我的帳號</h1><p>你的登入資料、使用期限，以及可以查看的品牌。</p></div>
   <section class="card"><h2>帳號資料</h2><p class="sub">資料有誤或要調整查看範圍，請與你的顧問聯絡。</p><dl class="kv" id="kvMe"></dl>
     <div class="form" style="margin-top:14px"><button class="btn" type="button" data-out>登出</button></div></section>
   <section class="card"><h2>變更密碼</h2><p class="sub">至少 8 個字。儲存後，下次請用新密碼登入。</p>
@@ -147,13 +226,13 @@ body{margin:0}
 </div></div>
 
 <div class="page" id="pg-admin" hidden><div class="wrap">
-  <div class="pgh"><h1>帳號與授權</h1><p>業主註冊後會出現在這裡。開通、決定他能看哪些品牌、設定到期日、停權，都在這一頁。</p></div>
+  <div class="pgh"><button class="btn sm back" type="button" data-back>‹ 返回</button><h1>帳號與授權</h1><p>業主註冊後會出現在這裡。開通、決定他能看哪些品牌、設定到期日、停權，都在這一頁。</p></div>
   <section class="card"><h2 id="tUsers">帳號清單</h2><p class="sub">等待開通的排在最上面。開通與停權時，系統會自動寄信通知對方。</p><div class="list" id="lUsers"></div></section>
   <section class="card" id="edCard" hidden><h2 id="edTitle">設定</h2><p class="sub" id="edSub"></p>
     <form id="fEd"><div class="formgrid">
       <label>狀態<select id="eStatus"><option value="pending">待開通</option><option value="active">使用中（開通）</option><option value="suspended">停權</option><option value="rejected">不開通</option></select></label>
       <label>到期日（留空＝不限期）<input id="eExp" type="date"></label>
-      <label>權限<select id="eAccess"><option value="view">只能看</option><option value="edit">可以交資料（第二階段上傳功能啟用後才有作用）</option></select></label>
+      <label>權限<select id="eAccess"><option value="view">只能看</option><option value="edit">可以看，也可以上傳損益表</option></select></label>
       <label>備註（只有你看得到）<input id="eNote" maxlength="500"></label>
       <div class="full"><div class="lbl" style="margin-bottom:4px">可以看的品牌（勾「整個品牌」就包含它之後新增的分店）</div><div class="units" id="eUnits"></div></div>
     </div>
@@ -168,7 +247,10 @@ body{margin:0}
 (function(){
 "use strict";
 /*CORE_JS*/
+var PDF_WORKER="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+/*IMPORT_JS*/
 /*APP_JS*/
+/*UPLOAD_JS*/
 })();
 </script>
 </body>
