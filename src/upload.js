@@ -28,6 +28,15 @@ function upClassify(F,u){
   F.items=F.parsed.items.map(function(it,i){var old=F.items&&F.items[i];if(old&&old.k==="admin")return old;var r=impClassify(it,maps);return {s:it.s,n:it.n,a:it.a,c:r.c,k:r.k}});
 }
 function upExists(u,ym){return !!u&&S.rows.some(function(r){return r.cl===u.cl&&r.br===u.br&&r.st===u.st&&r.m===ym})}
+/* the month is already in the system with exactly the same accounts and amounts (owners often re-send a workbook that keeps growing) */
+function upSame(u,F){
+  if(!u||!F.period||!F.items)return false;
+  var key=function(s,n,a){return s+"|"+impName(n)+"|"+Math.round(a*100)},cnt={},n=0;
+  S.rows.forEach(function(r){if(r.cl===u.cl&&r.br===u.br&&r.st===u.st&&r.m===F.period){var k=key(r.s,r.n,r.a);cnt[k]=(cnt[k]||0)+1;n++}});
+  if(!n||n!==F.items.length)return false;
+  return F.items.every(function(i){var k=key(i.s,i.n,i.a);if(!cnt[k])return false;cnt[k]--;return true});
+}
+function upSkip(F,u){return F.status==="ready"&&!F.force&&upSame(u,F)}
 
 /* ---------- upload page ---------- */
 function renderUpload(){
@@ -50,6 +59,8 @@ function renderUpCards(){
     c.appendChild(top);
     if(F.status==="reading"){c.appendChild(h("p","msg","讀取中…"));return}
     if(F.status==="error"){c.appendChild(h("p","msg bad",F.err));return}
+    if(upSkip(F,u)){c.appendChild(h("p","msg ok",F.period+" 和系統裡的資料完全一樣，已自動略過，不會重複送出。"));
+      var again=h("button","btn sm","還是要重新送出");again.type="button";again.addEventListener("click",function(){F.force=true;renderUpCards()});c.appendChild(again);return}
     if(F.status==="done"){var ok=F.result.status==="imported";var p=h("p","msg "+(ok?"ok":""),ok?"已建檔，儀表板已更新（"+F.period+"）。":"已送出，等顧問確認後建檔（"+F.period+"）。");c.appendChild(p);
       if(!ok){var ul=h("ul","issues");upReason(F.result.reasons).forEach(function(t){ul.appendChild(h("li",null,t))});c.appendChild(ul)}return}
     var P=F.parsed,sums=impSums(F.items),chk=impCheck(P.stated,sums);
@@ -63,6 +74,7 @@ function renderUpCards(){
       var st=P.stated[x[0]];d.appendChild(h("span",st==null?"":Math.abs(st-sums[x[0]])<=0.5?"ok":"bad",st==null?"原表沒有總計":Math.abs(st-sums[x[0]])<=0.5?"✓ 與原表相符":"✗ 原表 "+full(st)));g.appendChild(d)});
     c.appendChild(g);
     var issues=[],warn=[];
+    if(F.period&&UPF.some(function(o){return o!==F&&o.status!=="error"&&o.status!=="reading"&&!upSkip(o,u)&&o.period===F.period}))issues.push("這次上傳裡有另一份也是 "+F.period+"，請確認月份，避免互相蓋掉。");
     if(!F.period)issues.push("讀不到月份，請在上面選擇。");
     if(/^RANGE/.test(P.period||""))issues.push("這份檔案的期間超過一個月（"+P.period.slice(6)+"），請改傳單月的損益表。");
     chk.forEach(function(k){if(k!=="no_totals")issues.push(IMP_REASONS[k]+"，會請顧問確認。");else warn.push("檔案裡沒有總計，系統無法和原表核對，請自己確認上面四個數字對不對。")});
@@ -79,8 +91,8 @@ function renderUpCards(){
     if(F.err2)acts.appendChild(h("span","msg bad",F.err2));
     c.appendChild(acts);
   });
-  var ready=UPF.filter(function(F){return F.status==="ready"&&F.period}).length;
-  if(ready>1){var all=h("button","btn pri","全部確認建檔（"+ready+" 份）");all.type="button";all.addEventListener("click",async function(){for(var i=0;i<UPF.length;i++)if(UPF[i].status==="ready"&&UPF[i].period)await upSend(UPF[i],true);await upAfter()});box.appendChild(all)}
+  var go=function(F){return F.status==="ready"&&F.period&&!upSkip(F,u)},ready=UPF.filter(go).length;
+  if(ready>1){var all=h("button","btn pri","全部確認建檔（"+ready+" 份）");all.type="button";all.addEventListener("click",async function(){var list=UPF.filter(go);for(var i=0;i<list.length;i++)await upSend(list[i],true);await upAfter()});box.appendChild(all)}
 }
 function upItemsTable(items,editable,onChange,open){
   var d=document.createElement("details");if(open)d.open=true;
@@ -102,8 +114,12 @@ function upItemsTable(items,editable,onChange,open){
 async function upAddFiles(list){
   var u=upUnit();
   Array.prototype.forEach.call(list,function(file){
-    var F={id:++UPSEQ,file:file,name:file.name,status:"reading"};UPF.push(F);
-    impReadFile(file).then(function(P){F.parsed=P;F.period=/^\d{4}-\d{2}$/.test(P.period)?P.period:"";F.status="ready";upClassify(F,upUnit());renderUpCards()})
+    var F={id:++UPSEQ,file:file,name:file.name,status:"reading"},G={};UPF.push(F);
+    /* a workbook with several monthly sheets becomes one card per month, all sharing the stored original file */
+    impReadFile(file).then(function(list){
+      var at=UPF.indexOf(F),cards=list.map(function(P,i){var C=i?{id:++UPSEQ,file:file}:F;C.grp=G;C.name=file.name+(P.sheet?"・"+P.sheet:"");
+        C.parsed=P;C.period=/^\d{4}-\d{2}$/.test(P.period)?P.period:"";C.status="ready";upClassify(C,upUnit());return C});
+      if(at>=0)UPF.splice.apply(UPF,[at,1].concat(cards));renderUpCards()})
       .catch(function(e){F.status="error";F.err=(e&&e.message)||"讀取失敗";renderUpCards()});
   });
   renderUpCards();
@@ -114,8 +130,9 @@ async function upSend(F,batch){
   F.status="sending";F.err2="";renderUpCards();
   try{
     var path=null,ext=(F.name.split(".").pop()||"bin").toLowerCase().replace(/[^a-z0-9]/g,"");
-    try{var key=USER.id+"/"+F.period+"_"+Date.now().toString(36)+Math.random().toString(36).slice(2,6)+"."+ext;
-      var up=await sb.storage.from("pl-uploads").upload(key,F.file,{upsert:false,contentType:F.file.type||"application/octet-stream"});if(!up.error)path=key}catch(e){}
+    if(F.grp&&F.grp.path)path=F.grp.path;
+    else try{var key=USER.id+"/"+F.period+"_"+Date.now().toString(36)+Math.random().toString(36).slice(2,6)+"."+ext;
+      var up=await sb.storage.from("pl-uploads").upload(key,F.file,{upsert:false,contentType:F.file.type||"application/octet-stream"});if(!up.error){path=key;if(F.grp)F.grp.path=key}}catch(e){}
     var P=F.parsed,mism=!isAdmin()&&P.company&&upClean(P.company)&&upClean(u.cl)&&upClean(P.company).indexOf(upClean(u.cl))<0&&upClean(u.cl).indexOf(upClean(P.company))<0;
     var r=await sb.rpc("pl_submit_upload",{p:{client_name:u.cl,brand_name:u.br,store_name:u.st,unit_type:u.ut,period_month:F.period+"-01",file_name:F.name,file_path:path,
       stated:P.stated,items:F.items.map(function(i){return {s:i.s,c:i.c,n:i.n,a:i.a,k:isAdmin()&&i.k==="guess"?"admin":i.k}}),replace:!!F.replace,name_mismatch:!!mism}});
