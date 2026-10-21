@@ -63,6 +63,7 @@ function renderUpCards(){
       var st=P.stated[x[0]];d.appendChild(h("span",st==null?"":Math.abs(st-sums[x[0]])<=0.5?"ok":"bad",st==null?"原表沒有總計":Math.abs(st-sums[x[0]])<=0.5?"✓ 與原表相符":"✗ 原表 "+full(st)));g.appendChild(d)});
     c.appendChild(g);
     var issues=[],warn=[];
+    if(F.period&&UPF.some(function(o){return o!==F&&o.status!=="error"&&o.status!=="reading"&&o.period===F.period}))issues.push("這次上傳裡有另一份也是 "+F.period+"，請確認月份，避免互相蓋掉。");
     if(!F.period)issues.push("讀不到月份，請在上面選擇。");
     if(/^RANGE/.test(P.period||""))issues.push("這份檔案的期間超過一個月（"+P.period.slice(6)+"），請改傳單月的損益表。");
     chk.forEach(function(k){if(k!=="no_totals")issues.push(IMP_REASONS[k]+"，會請顧問確認。");else warn.push("檔案裡沒有總計，系統無法和原表核對，請自己確認上面四個數字對不對。")});
@@ -102,8 +103,12 @@ function upItemsTable(items,editable,onChange,open){
 async function upAddFiles(list){
   var u=upUnit();
   Array.prototype.forEach.call(list,function(file){
-    var F={id:++UPSEQ,file:file,name:file.name,status:"reading"};UPF.push(F);
-    impReadFile(file).then(function(P){F.parsed=P;F.period=/^\d{4}-\d{2}$/.test(P.period)?P.period:"";F.status="ready";upClassify(F,upUnit());renderUpCards()})
+    var F={id:++UPSEQ,file:file,name:file.name,status:"reading"},G={};UPF.push(F);
+    /* a workbook with several monthly sheets becomes one card per month, all sharing the stored original file */
+    impReadFile(file).then(function(list){
+      var at=UPF.indexOf(F),cards=list.map(function(P,i){var C=i?{id:++UPSEQ,file:file}:F;C.grp=G;C.name=file.name+(P.sheet?"・"+P.sheet:"");
+        C.parsed=P;C.period=/^\d{4}-\d{2}$/.test(P.period)?P.period:"";C.status="ready";upClassify(C,upUnit());return C});
+      if(at>=0)UPF.splice.apply(UPF,[at,1].concat(cards));renderUpCards()})
       .catch(function(e){F.status="error";F.err=(e&&e.message)||"讀取失敗";renderUpCards()});
   });
   renderUpCards();
@@ -114,8 +119,9 @@ async function upSend(F,batch){
   F.status="sending";F.err2="";renderUpCards();
   try{
     var path=null,ext=(F.name.split(".").pop()||"bin").toLowerCase().replace(/[^a-z0-9]/g,"");
-    try{var key=USER.id+"/"+F.period+"_"+Date.now().toString(36)+Math.random().toString(36).slice(2,6)+"."+ext;
-      var up=await sb.storage.from("pl-uploads").upload(key,F.file,{upsert:false,contentType:F.file.type||"application/octet-stream"});if(!up.error)path=key}catch(e){}
+    if(F.grp&&F.grp.path)path=F.grp.path;
+    else try{var key=USER.id+"/"+F.period+"_"+Date.now().toString(36)+Math.random().toString(36).slice(2,6)+"."+ext;
+      var up=await sb.storage.from("pl-uploads").upload(key,F.file,{upsert:false,contentType:F.file.type||"application/octet-stream"});if(!up.error){path=key;if(F.grp)F.grp.path=key}}catch(e){}
     var P=F.parsed,mism=!isAdmin()&&P.company&&upClean(P.company)&&upClean(u.cl)&&upClean(P.company).indexOf(upClean(u.cl))<0&&upClean(u.cl).indexOf(upClean(P.company))<0;
     var r=await sb.rpc("pl_submit_upload",{p:{client_name:u.cl,brand_name:u.br,store_name:u.st,unit_type:u.ut,period_month:F.period+"-01",file_name:F.name,file_path:path,
       stated:P.stated,items:F.items.map(function(i){return {s:i.s,c:i.c,n:i.n,a:i.a,k:isAdmin()&&i.k==="guess"?"admin":i.k}}),replace:!!F.replace,name_mismatch:!!mism}});

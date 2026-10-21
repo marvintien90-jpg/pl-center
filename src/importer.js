@@ -8,10 +8,11 @@ var IMP_RULES=[
   [/折舊|攤提|攤銷/,"折舊攤提"],
   [/免洗|餐具|包材|包裝|耗材|紙盒|紙袋|塑膠袋|吸管/,"包材耗材"],
   [/徵才|求才|人力銀行/,"一般營運費用"],
-  [/薪|津貼|勞健保|勞保|健保|勞退|退休金|員工福利|福利金|加班|獎金|伙食|工讀|鐘點|二代健保|職工/,"人事費用"],
+  [/郵電|郵資|郵寄|電話|通訊|網路/,"一般營運費用"],
+  [/薪|津貼|勞健保|勞保|健保|勞退|退休金|員工福利|福利金|加班|獎金|紅利|分紅|伙食|工讀|鐘點|二代健保|職工/,"人事費用"],
   [/租金|房租|租賃|管理費/,"租金"],
   [/水費|電費|水電|瓦斯|燃料|天然氣|燃氣/,"水電燃料"],
-  [/手續費|刷卡|金流|支付/,"金流手續費"],
+  [/手續費|刷卡|金流|支付|line\s*pay|街口|悠遊付|全支付/i,"金流手續費"],
   [/廣告|行銷|宣傳|促銷|會員|網紅|Ocard|印刷|設計費/i,"行銷費用"],
   [/修繕|維修|維護|消毒|清潔|洗滌|除蟲|保養/,"修繕與清潔"],
   [/文具|電腦|通訊|電話|網路|會計|記帳|保險|公播|拜拜|供品|郵電|郵資|運費|規費|稅捐|雜|其他|交際|書報|訓練|旅費|差旅|車資|交通|捐贈|軟體|系統|服務費|顧問|律師|罰款|佣金/,"一般營運費用"]
@@ -19,6 +20,12 @@ var IMP_RULES=[
 var IMP_REASONS={mismatch_R:"營業收入加總和原表的總計對不上",mismatch_C:"營業成本加總和原表對不上",mismatch_O:"營業費用加總和原表對不上",mismatch_N:"淨利和原表對不上",
   no_totals:"檔案裡沒有總計可以核對",unknown_accounts:"有系統沒看過的科目，需要確認分類",month_exists:"這個月份已經有資料，要確認是否取代",
   name_mismatch:"檔案上的公司名稱和這家店不一樣",new_store:"這是新的分店名稱"};
+/* account name without the bookkeeper's notes, so the same account matches every month: "燃料費(9月瓦斯5040)" -> "燃料費" */
+function impName(t){
+  var s=String(t||"").replace(/[\s\u3000]+/g," ").trim(),x;
+  while((x=s.replace(/\s*[(（][^()（）]*[)）]\s*$/,""))!==s&&x)s=x;
+  return s;
+}
 
 function impNum(t){
   if(typeof t==="number")return isFinite(t)?t:null;
@@ -46,17 +53,23 @@ function impSecOf(label){
 }
 
 /* lines: array of arrays of cells (strings or numbers). Returns everything the upload page needs. */
-function impParse(lines,fileName){
-  var out={items:[],stated:{},period:"",company:"",nonop:[],notes:[]},sec=null,T={},head=[];
-  lines.forEach(function(cells,li){
-    cells=cells.filter(function(c){return c!==null&&c!==undefined&&String(c).trim()!==""});
+function impParse(lines,fileName,sheetName){
+  var out={items:[],stated:{},period:"",company:"",nonop:[],notes:[],sheet:sheetName||""},sec=null,T={},head=[],amtCol=-1,ended=false,tail=0,per={};
+  lines.forEach(function(raw,li){
+    raw=raw||[];
+    var cells=raw.filter(function(c){return c!==null&&c!==undefined&&String(c).trim()!==""});
     if(!cells.length)return;
+    /* everything under the final line (本期損益) is the bookkeeper's notes, e.g. a list of utility bills */
+    if(ended){if(cells.some(function(c){return impNum(c)!==null}))tail++;return}
+    /* header row such as 主科目名稱｜金額｜小計｜總計｜百分比: remember which column holds each account's own amount */
+    if(amtCol<0&&!out.items.length){for(var ci=0;ci<raw.length;ci++)if(/^(本期)?金額$/.test(String(raw[ci]==null?"":raw[ci]).replace(/\s/g,""))){amtCol=ci;break}}
     var nums=[],labs=[];
     cells.forEach(function(c){var v=impNum(c);if(v===null)labs.push(String(c).trim());else nums.push(v)});
     var text=labs.join(" ");
     if(/^公司(名稱)?$/.test(labs[0]||"")&&labs[1])out.company=labs.slice(1).join("");
     if(li<25&&sec===null&&!nums.length)head.push(text);
-    if(!out.period&&(li<25||/區間|期間|年月|月份/.test(text))){var pd=impPeriod(text.replace(/(列印|製表|印表)(日期)?[：:]?\s*[\d\/\-.]+/g,""));if(pd)out.period=pd}
+    if(li<25||/區間|期間|年月|月份/.test(text)){var pd=impPeriod(text.replace(/(列印|製表|印表)(日期)?[：:]?\s*[\d\/\-.]+/g,""));
+      if(pd){var kind=/區間|期間|至|~|～/.test(text)?"range":"title";if(!per[kind])per[kind]=pd}}
     if(!labs.length)return;
     var first=labs[0];
     if(IMP_SECS[first]&&labs.length>1&&nums.length){sec=first;labs=labs.slice(1);text=labs.join(" ");first=labs[0]}
@@ -65,7 +78,7 @@ function impParse(lines,fileName){
     if(isTot){
       if(!nums.length){var s0=impSecOf(label);if(s0)sec=s0;return}
       var v=nums[0];
-      if(/本期損益|稅前|稅後/.test(label))T.NN=v;
+      if(/本期損益|稅前|稅後/.test(label)){T.NN=v;ended=true}
       else if(/營業淨利|營業淨損|營業損益/.test(label))T.N=v;
       else if(/毛利/.test(label))T.GP=v;
       else if(/營業外/.test(label)){}
@@ -77,13 +90,20 @@ function impParse(lines,fileName){
     if(!nums.length){var s1=impSecOf(label);if(s1&&label.length<=12)sec=s1;return}
     if(!sec)return;
     if(/^(期間|月份|年月|公司名稱|大類|科目|金額)/.test(label))return;
-    var amt=nums[0];if(!amt)return;
+    var amt=nums[0];if(amtCol>=0&&raw.length>amtCol&&impNum(raw[amtCol])!==null)amt=impNum(raw[amtCol]);if(!amt)return;
+    label=impName(label)||label;
     if(sec==="skip"){out.nonop.push({n:label,a:amt});return}
     out.items.push({s:sec,n:label.slice(0,80),a:Math.round(amt*100)/100});
   });
   /* company name: first heading line that is not a title */
   for(var i=0;i<head.length&&!out.company;i++){var x=head[i].replace(/\s+/g,"");if(x&&!/損益|頁|日期|區間|期間|部門|科目|QRLabel|^[\d\/\-.]+$|公司名稱|收入|成本|費用|大類|金額|說明/.test(x)&&x.length<=40&&/[一-鿿]/.test(x)){out.company=x;break}}
-  if(!out.period&&fileName){var f=String(fileName).replace(/\.[^.]+$/,"");var m=/(\d{3,4})[\-_.年](\d{1,2})/.exec(f);if(m)out.period=impYM(m[1],m[2])}
+  /* month: the date range printed on the statement wins, then the title, then the sheet name, then the file name */
+  if(sheetName){var sp=impPeriod(String(sheetName));if(/^\d{4}-\d{2}$/.test(sp))per.sheet=sp}
+  if(fileName){var f=String(fileName).replace(/\.[^.]+$/,"");var m=/(\d{3,4})[\-_.年](\d{1,2})/.exec(f);if(m)per.file=impYM(m[1],m[2])}
+  out.period=per.range||per.title||per.sheet||per.file||"";
+  var seen={};["range","title","sheet"].forEach(function(k){if(/^\d{4}-\d{2}$/.test(per[k]||""))seen[per[k]]=1});
+  if(Object.keys(seen).length>1)out.notes.push("檔案上的月份寫法不一致（"+Object.keys(seen).join("、")+"），系統用日期區間的 "+out.period+"，請確認。");
+  if(tail)out.notes.push("表格最下面有 "+tail+" 列附註（例如帳單明細），沒有列入計算。");
   if(T.R!=null)out.stated.R=T.R;
   if(T.C!=null)out.stated.C=T.C;else if(T.R!=null&&T.GP!=null)out.stated.C=T.R-T.GP;
   if(T.N!=null)out.stated.N=T.N;else if(T.NN!=null&&!out.nonop.length)out.stated.N=T.NN;
@@ -139,21 +159,24 @@ async function impReadPdf(buf){
   }
   return lines;
 }
-function impReadSheet(buf,isCsv){
+/* every visible sheet: one workbook often holds several months, one sheet each */
+function impReadSheets(buf,isCsv){
   var X=window.XLSX;if(!X)throw new Error("Excel 讀取元件沒有載入成功，請重新整理頁面再試一次。");
   var wb=isCsv?X.read(new TextDecoder("utf-8").decode(buf),{type:"string"}):X.read(buf,{type:"array"});
-  var ws=wb.Sheets[wb.SheetNames[0]];
-  return X.utils.sheet_to_json(ws,{header:1,raw:true,defval:""}).map(function(r){return r.map(function(c){return typeof c==="string"?c.trim():c})});
+  var meta=(wb.Workbook&&wb.Workbook.Sheets)||[];
+  return wb.SheetNames.filter(function(n,i){return !(meta[i]&&meta[i].Hidden)}).map(function(n){
+    return {name:n,lines:X.utils.sheet_to_json(wb.Sheets[n],{header:1,raw:true,defval:""}).map(function(r){return r.map(function(c){return typeof c==="string"?c.trim():c})})}});
 }
+/* returns one parsed statement per month found in the file (sheets without accounts are skipped) */
 async function impReadFile(file){
   var name=file.name||"",ext=(name.split(".").pop()||"").toLowerCase(),buf=await file.arrayBuffer();
-  var lines;
-  if(ext==="pdf")lines=await impReadPdf(new Uint8Array(buf));
-  else if(ext==="xlsx"||ext==="xls"||ext==="csv")lines=impReadSheet(buf,ext==="csv");
+  var parts;
+  if(ext==="pdf")parts=[{name:"",lines:await impReadPdf(new Uint8Array(buf))}];
+  else if(ext==="xlsx"||ext==="xls"||ext==="csv")parts=impReadSheets(buf,ext==="csv");
   else throw new Error("只支援 PDF、Excel（.xlsx／.xls）與 CSV 檔。");
-  var r=impParse(lines,name);
-  if(!r.items.length)throw new Error(ext==="pdf"?"這份 PDF 讀不到任何科目與金額。如果是掃描或拍照的檔案，目前還讀不了，請改傳會計軟體直接匯出的 PDF 或 Excel。":"這個檔案讀不到任何科目與金額。請確認格式，或下載範本照著填。");
-  return r;
+  var out=parts.map(function(p){return impParse(p.lines,name,parts.length>1?p.name:"")}).filter(function(r){return r.items.length});
+  if(!out.length)throw new Error(ext==="pdf"?"這份 PDF 讀不到任何科目與金額。如果是掃描或拍照的檔案，目前還讀不了，請改傳會計軟體直接匯出的 PDF 或 Excel。":"這個檔案讀不到任何科目與金額。請確認格式，或下載範本照著填。");
+  return out;
 }
 function impTemplate(){
   var X=window.XLSX;if(!X)return;
