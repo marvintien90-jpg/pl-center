@@ -230,10 +230,12 @@ function renderHome(){
   [["ALL",n+" 個月"]].concat(D.months.map(function(m){return [m,mlabel(m)]})).forEach(function(x){
     var b=h("button",null,x[1]);b.type="button";b.setAttribute("aria-pressed",String(S.month===x[0]));b.addEventListener("click",function(){setMonth(x[0])});seg.appendChild(b)});
   $("adjOff").setAttribute("aria-pressed",String(!S.adj));$("adjOn").setAttribute("aria-pressed",String(S.adj));
-  renderKpis(D);renderLights(D);renderRev(D);renderNet(D);renderWf(D);renderBe(D);renderCh(D);renderTable(D);
+  var FL=monthFlags(D);
+  Array.prototype.forEach.call(seg.children,function(b,i){var m=i?D.months[i-1]:null;if(m&&FL[m]){b.textContent="⚠ "+b.textContent;b.title="資料可能不完整："+FL[m].join("；")}});
+  renderDiag(D,FL,S.adj?[]:rows);renderKpis(D);renderLights(D);renderRev(D);renderNet(D);renderPrime(D,FL);renderWf(D);renderBe(D);renderCh(D);renderTable(D);
   if(n<2)$("tRev").textContent=mlabel(D.months[0])+"營業收入 "+wan(rev(D.M[D.months[0]]));
   var ann=(BR[p.bid]||{}).annual||[],an=ann.join("、");
-  $("adjNote").textContent=S.adj?"還原後口徑做了調整：營業稅依各月營收比例攤平"+(an?"；"+an+"這類一年付一次的費用，改為每月認列十二分之一（只認列畫面上這段期間的月份，所以累計數字會和帳面不同）。":"。"):"帳面口徑：與原始損益表完全一致。營業稅通常兩個月入帳一次"+(an?"，"+an+"一年只記一次":"")+"，單月數字會因此忽高忽低；切到「還原後」可以攤平。";
+  $("adjNote").textContent=S.adj?"還原後口徑做了調整：營業稅依各月營收比例攤平；水電燃料與修繕清潔常隔月或兩個月合併入帳，改為期間內每月平均"+(an?"；"+an+"這類一年付一次的費用，改為每月認列十二分之一（只認列畫面上這段期間的月份，所以累計數字會和帳面不同）。":"。"):"帳面口徑：與原始損益表完全一致。營業稅通常兩個月入帳一次"+(an?"，"+an+"一年只記一次":"")+"，單月數字會因此忽高忽低；切到「還原後」可以攤平。";
   $("calcNote").textContent="怎麼算的：食材率含包材（免洗餐具）。外送有效抽成＝平台服務費、廣告、促銷折扣、上架費、退款合計 ÷ 該平台營業額。損益兩平把食材、包材、平台費、金流、營業稅與一部分水電（目前算 "+CFG.vu+"%，由顧問設定）視為變動成本，人事、租金、其餘水電與其他費用視為固定費用。通路留存以全店平均食材包材率估算。損益表上沒有記的項目（例如折舊、負責人自己的薪資、自有店面的租金），這裡不會自動補上。";
   $("status").textContent=LOADED_AT?"資料讀取時間 "+LOADED_AT+(SKIPPED?"（有 "+SKIPPED+" 筆格式不符的資料沒有顯示，請通知顧問）":""):"";
 }
