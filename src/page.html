@@ -145,6 +145,7 @@ td small,th small{display:block;font-size:11px;font-weight:400;color:var(--muted
     <div class="grp"><button class="btn" id="btnRefresh" type="button">重新整理資料</button><button class="btn" id="btnExport" type="button">匯出 Excel</button><span class="status" id="status" role="status"></span></div>
   </div>
 
+  <section class="card" id="diag"></section>
   <section class="kpis" id="kpis"></section>
   <section class="lights" id="lights"></section>
   <p class="note" style="margin:0">燈號基準是業界一般參考值，由顧問依你的業態設定。亮紅燈代表「值得追問」，不代表一定有問題；原因要對照現場狀況才能確定。</p>
@@ -155,6 +156,10 @@ td small,th small{display:block;font-size:11px;font-weight:400;color:var(--muted
     <section class="card"><h2 id="tNet"></h2><p class="sub">每月營業淨利。往下代表虧損。</p>
       <div class="chart" id="cNet"></div></section>
   </div>
+
+  <section class="card"><h2 id="tPrime"></h2><p class="sub">主要成本＝食材包材＋人事費用，占營業收入的比例。綠色是健康區、黃色是警戒區，超過就是紅燈。標 ⚠ 的月份資料可能不完整。</p>
+    <div class="legend"><span><i style="background:var(--ink)"></i>主要成本率</span><span><i style="background:var(--s2)"></i>人事費用率</span><span><i style="background:var(--s1)"></i>食材＋包材率</span></div>
+    <div class="chart" id="cPrime"></div></section>
 
   <section class="card"><h2 id="tWf"></h2><p class="sub" id="sWf"></p><div class="chart" id="cWf"></div></section>
 

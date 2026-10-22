@@ -30,6 +30,7 @@ function normCfg(d){
 }
 function cfgOf(bid){return normCfg(BR[bid]||null)}
 var S={rows:[],month:"ALL",adj:false,sc:""};
+var SMOOTH=["水電燃料","修繕與清潔"];
 function scParse(t){if(!t||t==="all")return {t:"all"};var k=t.slice(0,2),v=t.slice(2);if(k==="c:")return {t:"client",cl:v};if(k==="b:")return {t:"brand",bid:v};var i=v.indexOf("|");return {t:"store",bid:v.slice(0,i),st:v.slice(i+1)}}
 function rowsFor(p){return S.rows.filter(function(r){if(p.t==="all")return true;if(p.t==="client")return r.cl===p.cl&&r.c!=="內部交易";return bidOf(r.cl,r.br)===p.bid&&(p.t==="brand"||r.st===p.st)})}
 function ents(){
@@ -72,6 +73,8 @@ function build(rows,adj){
       for(var c in ann)M[m][c]=(M[m][c]||0)+ann[c]/12;
       M[m]["營業稅"]=revAll?tax*rev(M[m])/revAll:0;
     });
+    /* utilities and cleaning are often billed every other month or two months at once: spread them evenly over the period */
+    if(months.length>1)SMOOTH.forEach(function(c){var t=0;months.forEach(function(m){t+=M[m][c]||0});if(t)months.forEach(function(m){M[m][c]=t/months.length})});
   }
   return {M:M,months:months,A:A};
 }
@@ -317,4 +320,72 @@ function renderTable(D){
   row("淨利率",function(o){var m=met(o);return m.net/m.R},{isPct:true});
 
   $("sTbl").textContent=(S.adj?"還原後口徑":"帳面口徑")+"。每個金額下面的小字是占當月營業收入的百分比；「月平均」是 "+n+" 個月平均，比率列的「月平均」與「合計」以全期間計算。"+(S.adj?"":"有 ▸ 的科目點一下可以展開原始科目。");
+}
+
+/* ---------- incomplete-month flags: a month whose rent, staff, food or revenue is far below the other months ---------- */
+function monthFlags(D){
+  var F={},n=D.months.length;if(n<3)return F;
+  var med=function(a){a=a.slice().sort(function(x,y){return x-y});var k=a.length>>1;return a.length%2?a[k]:(a[k-1]+a[k])/2};
+  var chk=[["租金",function(o){return o["租金"]||0},.5],["人事費用",function(o){return o["人事費用"]||0},.7],["食材成本",function(o){return (o["食材成本"]||0)+(o["包材耗材"]||0)},.5],["營業收入",rev,.5]];
+  D.months.forEach(function(m){
+    var why=[];
+    chk.forEach(function(c){var v=c[1](D.M[m]),md=med(D.months.filter(function(x){return x!==m}).map(function(x){return c[1](D.M[x])}));
+      if(md>0&&v<md*c[2])why.push(c[0]+"只有 "+wan(v)+"，其他月份約 "+wan(md))});
+    if(why.length)F[m]=why;
+  });
+  return F;
+}
+/* ---------- prime cost trend: food+packaging and staff as a share of revenue, against the healthy band ---------- */
+function renderPrime(D,FL){
+  var box=$("cPrime"),W=box.clientWidth||900,H=240,pL=44,pR=12,pT=14,pB=26,tip=tipFor(box),n=D.months.length;
+  var svg=svgIn(box,W,H),g=colGeom(D,W,pL,pR),bp=CFG.bm.prime;
+  var S3=D.months.map(function(m){var x=met(D.M[m]);return {f:x.R?x.food/x.R:0,l:x.R?x.labor/x.R:0,p:x.R?(x.food+x.labor)/x.R:0}});
+  var hi=Math.max(1,Math.ceil((Math.max.apply(null,S3.map(function(s){return s.p}).concat([bp[1]/100]))+.05)*10)/10),lo=0;
+  var y=function(v){return pT+(H-pT-pB)*(hi-v)/(hi-lo)};
+  svg.appendChild(el("rect",{x:pL,y:y(bp[0]/100),width:W-pL-pR,height:y(0)-y(bp[0]/100),fill:"var(--good-bg)"}));
+  svg.appendChild(el("rect",{x:pL,y:y(bp[1]/100),width:W-pL-pR,height:y(bp[0]/100)-y(bp[1]/100),fill:"var(--warn-bg)"}));
+  for(var t=0;t<=hi*10+.01;t+=2){var v=t/10;svg.appendChild(el("line",{x1:pL,x2:W-pR,y1:y(v),y2:y(v),stroke:t?"var(--grid)":"var(--axis)","stroke-width":1}));svg.appendChild(el("text",{x:pL-6,y:y(v)+4,"text-anchor":"end","font-size":11,fill:"var(--muted)"},Math.round(v*100)+"%"))}
+  svg.appendChild(el("text",{x:W-pR-4,y:y(bp[0]/100)+14,"text-anchor":"end","font-size":11,fill:"var(--good)"},"健康區 ≤ "+bp[0]+"%"));
+  [["p","var(--ink)",2.5],["l","var(--s2)",2],["f","var(--s1)",2]].forEach(function(s){
+    var d=S3.map(function(v,i){return (i?"L":"M")+g.x(i)+","+y(v[s[0]])}).join("");
+    svg.appendChild(el("path",{d:d,fill:"none",stroke:s[1],"stroke-width":s[2],"stroke-linejoin":"round","stroke-linecap":"round"}));
+    S3.forEach(function(v,i){svg.appendChild(el("circle",{cx:g.x(i),cy:y(v[s[0]]),r:s[0]==="p"?4:3,fill:s[1],stroke:"var(--surface)","stroke-width":1.5}))});
+  });
+  D.months.forEach(function(m,i){
+    var cx=g.x(i),sel=S.month===m,grp=el("g",{style:"cursor:pointer"});
+    grp.appendChild(el("rect",{x:cx-g.band/2,y:pT,width:g.band,height:H-pT-pB,fill:"transparent"}));
+    var L=[mlabel(m)+(FL[m]?"（資料可能不完整）":""),"主要成本率　"+pct(S3[i].p),"人事費用率　"+pct(S3[i].l),"食材＋包材率　"+pct(S3[i].f)];
+    hover(grp,tip,L);grp.addEventListener("click",function(){setMonth(m)});svg.appendChild(grp);
+    svg.appendChild(el("text",{x:cx,y:H-8,"text-anchor":"middle","font-size":12,fill:FL[m]?"var(--warn)":sel?"var(--ink)":"var(--ink2)","font-weight":sel?700:400},(FL[m]?"⚠ ":"")+mlabel(m)));
+    if(sel||(S.month==="ALL"&&i===n-1))svg.appendChild(el("text",{x:cx,y:y(S3[i].p)-9,"text-anchor":"middle","font-size":11,fill:"var(--ink)","font-weight":600},pct(S3[i].p)));
+  });
+  var ok=D.months.filter(function(m,i){return !FL[m]}),over=S3.filter(function(s,i){return !FL[D.months[i]]&&s.p*100>bp[0]}).length;
+  var avgL=0,avgF=0,k=0;S3.forEach(function(s,i){if(!FL[D.months[i]]){avgL+=s.l;avgF+=s.f;k++}});avgL/=k||1;avgF/=k||1;
+  var bigger=avgL/(CFG.bm.labor[0]/100)>avgF/(CFG.bm.food[0]/100)?"人事費用（平均 "+pct(avgL)+"，基準 ≤ "+CFG.bm.labor[0]+"%）":"食材包材（平均 "+pct(avgF)+"，基準 ≤ "+CFG.bm.food[0]+"%）";
+  $("tPrime").textContent=over?ok.length+" 個月中有 "+over+" 個月主要成本超過健康區，壓力主要來自"+bigger:"主要成本都在健康區內";
+}
+/* ---------- diagnosis card: why net profit moved, account by account, plus flags and red lights ---------- */
+function renderDiag(D,FL,rows){
+  var box=$("diag");box.textContent="";var n=D.months.length;
+  var bi=S.month==="ALL"?n-1:D.months.indexOf(S.month),ai=bi-1,mb=D.months[bi];
+  var head=h("h2",null,(S.month==="ALL"?"最近一個月（"+mlabel(mb)+"）":mlabel(mb))+"診斷");box.appendChild(head);
+  var ul=h("ul","diag");box.appendChild(ul);
+  var add=function(L,txt){var li=h("li",L);li.appendChild(icon(L));li.appendChild(h("span",null,txt));ul.appendChild(li)};
+  if(FL[mb])add("y","這個月的資料可能不完整："+FL[mb].join("；")+"。和其他月份比較時請先排除或向業主確認。");
+  if(ai>=0){
+    var ma=D.months[ai],acc={},addA=function(r,sg){if(r.s==="營業收入")return;var k=r.n;acc[k]=acc[k]||{a:0,b:0};acc[k][sg]+=r.a};
+    var ra=rev(D.M[ma]),rb=rev(D.M[mb]);
+    if(rows.length)rows.forEach(function(r){if(r.m===ma)addA(r,"a");else if(r.m===mb)addA(r,"b")});
+    else COST.forEach(function(c){var x=D.M[ma][c]||0,y=D.M[mb][c]||0;if(x||y)acc[c]={a:x,b:y}});
+    var na=met(D.M[ma]).net,nb=met(D.M[mb]).net,dn=nb-na;
+    var it=[{t:"營業收入"+(rb>=ra?"增加 ":"減少 ")+wan(Math.abs(rb-ra)),v:rb-ra}];
+    Object.keys(acc).forEach(function(k){var d=acc[k].b-acc[k].a;if(Math.abs(d)>=1)it.push({t:k+(d>0?"增加 ":"減少 ")+wan(Math.abs(d))+(acc[k].a===0?"（上個月沒有）":acc[k].b===0?"（這個月沒有）":""),v:-d})});
+    it.sort(function(x,y){return dn<0?x.v-y.v:y.v-x.v});
+    var top=it.filter(function(x){return dn<0?x.v<0:x.v>0}).slice(0,3);
+    add(dn<0?"r":"g","營業淨利比 "+mlabel(ma)+(dn<0?"少 ":"多 ")+wan(Math.abs(dn))+"（"+swan(na)+" → "+swan(nb)+"），主要原因："+top.map(function(x){return x.t+"（淨利 "+swan(x.v)+"）"}).join("、")+"。");
+    if(!S.adj&&SMOOTH.some(function(c){return !(D.M[ma][c]||0)!==!(D.M[mb][c]||0)}))add("y","水電或清潔費這兩個月一個有、一個沒有，可能是隔月入帳。切到上方「還原後」可以平均攤開再比較。");
+  }
+  var reds=lightRows(met(D.M[mb])).filter(function(r){return r.L==="r"});
+  if(reds.length)add("r","紅燈："+reds.map(function(r){return r[0]+" "+pct(r[1])+"（基準 "+r[2][2]+"）"}).join("、")+"。");
+  else add("g","這個月沒有紅燈指標。");
 }
