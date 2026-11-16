@@ -1380,7 +1380,9 @@ async function reloadAdmin(){
 /* ---------- boot ---------- */
 function boot(){
   if(!window.supabase||!window.supabase.createClient){loading("網頁需要的元件沒有載入成功。請確認網路正常後重新整理；如果用的是公司網路，可以改用手機網路試試。",false);return}
-  sb=window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,storageKey:"plc-auth"}});
+  /* 與 BOM 運算中心、業主入口共用同一個登入：改用 Supabase 預設的登入鑰匙，舊鑰匙 plc-auth 的登入自動搬過去 */
+  try{const K="sb-thxqncpkkzmpktwuvzvz-auth-token",o=localStorage.getItem("plc-auth");if(o){if(!localStorage.getItem(K))localStorage.setItem(K,o);localStorage.removeItem("plc-auth")}}catch(e){}
+  sb=window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
   setMode("in");
   $("tabIn").addEventListener("click",function(){setMode("in");auMsg("")});$("tabUp").addEventListener("click",function(){setMode("up");auMsg("")});$("tabFg").addEventListener("click",function(){setMode("fg");auMsg("")});
   $("fAuth").addEventListener("submit",authSubmit);$("auResend").addEventListener("click",resend);
