@@ -90,7 +90,7 @@ async function route(force){
     if(gate())return;
     loading("讀取損益資料中…");
     await loadData();
-    if(!isAdmin()&&!S.rows.length){gate("noaccess");return}
+    if(!isAdmin()&&!S.rows.length&&!(canUpload()&&ACC.some(function(x){return x.user_id===ME.user_id}))){gate("noaccess");return}
     enterApp();
   }catch(e){loading(errText(e),true)}
   finally{routing=false;if(again){again=false;route(true)}}
@@ -103,7 +103,7 @@ function gate(kind){
     pending:["帳號等待開通","你的帳號已經建立，目前在等顧問確認。",["註冊完成 ✓","Email 驗證完成 ✓","等待"+WHO+"開通（目前在這一步）","收到開通通知信後，回到這裡按「重新檢查」或重新登入"]],
     rejected:["帳號尚未開通","這個帳號目前沒有開通使用。如果認為這是誤會，歡迎和"+WHO+"聯絡。",[]],
     suspended:["使用授權已停用","這個帳號目前暫時無法查看損益資料。",["你的資料都完整保存著，沒有被刪除","聯絡"+WHO+"辦理恢復","處理完成後回到這裡按「重新檢查」"]],
-    expired:["使用期限已到","這個帳號的使用期限到 "+(ME.expires_on||"")+" 為止，目前暫時無法查看。",["你的資料都完整保存著，沒有被刪除","聯絡"+WHO+"辦理續用","處理完成後回到這裡按「重新檢查」"]],
+    expired:["使用期限已到","這個帳號的使用期限到 "+(ME.expires_on||"")+" 為止，目前暫時無法查看。",["你的資料都完整保存著，沒有被刪除","到會員中心（marvintien90-jpg.github.io/bom-center/member/）續訂，或聯絡"+WHO+"辦理續用","處理完成後回到這裡按「重新檢查」"]],
     noaccess:["帳號已開通，資料準備中","帳號可以使用了，但顧問還沒有把你的品牌損益資料掛上來。",["請稍後按「重新檢查」","等了一陣子還是這個畫面，請和"+WHO+"聯絡"]]
   }[k];
   $("gTitle").textContent=T[0];$("gText").textContent=T[1];
@@ -218,7 +218,7 @@ function cfgFor(bid){var d=BR[bid];if(d&&!d.unset)return normCfg(d);var c=normCf
 function renderHome(){
   var p=curP(),rows=(p.t==="brand"||p.t==="store")?rowsFor(p):[];
   $("dashEmpty").hidden=!!rows.length;$("dashBody").hidden=!rows.length;
-  if(!rows.length){$("dashTitle").textContent="損益儀表板";$("bmLabel").textContent="";$("dashEmptyTxt").textContent=isAdmin()?"資料庫裡還沒有任何損益資料。資料由內部系統與每週檢查寫入，寫入後回到這裡按重新整理就會出現。":"顧問還沒有把這個範圍的損益資料掛上來。";return}
+  if(!rows.length){$("dashTitle").textContent="損益儀表板";$("bmLabel").textContent="";$("dashEmptyTxt").textContent=isAdmin()?"資料庫裡還沒有任何損益資料。資料由內部系統與每週檢查寫入，寫入後回到這裡按重新整理就會出現。":(canUpload()?"還沒有損益資料。按左邊的「上傳損益表」上傳第一個月份（Excel 或 CSV），儀表板就會出現。":"顧問還沒有把這個範圍的損益資料掛上來。");return}
   CFG=cfgFor(p.bid);setCats(rows);
   var D=build(rows,S.adj),n=D.months.length;
   if(S.month!=="ALL"&&D.months.indexOf(S.month)<0)S.month="ALL";
@@ -244,7 +244,7 @@ async function refreshData(){
   try{
     var r=await sb.from("pl_profiles").select("*").eq("user_id",CUR).maybeSingle();if(r.error)throw r.error;if(r.data)ME=r.data;
     if(gate())return;
-    await loadData();if(!isAdmin()&&!S.rows.length){gate("noaccess");return}
+    await loadData();if(!isAdmin()&&!S.rows.length&&!(canUpload()&&ACC.some(function(x){return x.user_id===ME.user_id}))){gate("noaccess");return}
     renderAll();
   }catch(e){$("status").textContent=errText(e)}finally{b.disabled=false}
 }
