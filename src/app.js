@@ -47,7 +47,7 @@ async function authSubmit(ev){
   ev.preventDefault();var email=$("auEmail").value.trim(),pass=$("auPass").value,name=$("auName").value.trim();
   auMsg("處理中…");$("auBtn").disabled=true;
   try{
-    if(MODE==="fg"){var f=await sb.auth.resetPasswordForEmail(email,{redirectTo:REDIR()});if(f.error)throw f.error;auMsg("如果這個 Email 有註冊過，重設密碼的信已經寄出。請在一小時內點信裡的連結；沒收到請看垃圾信匣。");return}
+    if(MODE==="fg"){var f=await sb.auth.resetPasswordForEmail(email,{redirectTo:"https://marvintien90-jpg.github.io/bom-center/portal/"});if(f.error)throw f.error;auMsg("如果這個 Email 有註冊過，重設密碼的信已經寄出。請在一小時內點信裡的連結；沒收到請看垃圾信匣。");return}
     if(MODE==="up"){
       var u=await sb.auth.signUp({email:email,password:pass,options:{data:{app:"pl",display_name:name},emailRedirectTo:REDIR()}});if(u.error)throw u.error;
       if(u.data.user&&u.data.user.identities&&!u.data.user.identities.length){setMode("in");auMsg("這個 Email 已經註冊過（如果你用過 BOM 運算中心，兩邊是同一組帳號密碼），請直接登入。忘記密碼可按「忘記密碼」。");return}
@@ -294,11 +294,6 @@ function renderAccount(){
   var mine=isAdmin()?"全部品牌（管理員）":accText(ACC.filter(function(a){return a.user_id===ME.user_id}));
   [["名稱",ME.display_name||"（未填）"],["Email",ME.email],["狀態",STN[ME.status]||ME.status],["使用期限",ME.role==="admin"?"不限期":ME.expires_on?"到 "+ME.expires_on+" 為止":"不限期"],["可以查看",mine],["目前功能",canUpload()?"查看儀表板、匯出 Excel、上傳損益表":"查看儀表板與匯出 Excel"]].forEach(function(r){kv.appendChild(h("dt",null,r[0]));kv.appendChild(h("dd",null,r[1]))});
 }
-async function pwSubmit(ev){
-  ev.preventDefault();$("pwMsg").textContent="處理中…";$("pwBtn").disabled=true;
-  try{var r=await sb.auth.updateUser({password:$("pwNew").value});if(r.error)throw r.error;$("pwNew").value="";$("pwMsg").textContent="密碼已更新，下次請用新密碼登入。"}
-  catch(e){$("pwMsg").textContent=errText(e)}finally{$("pwBtn").disabled=false}
-}
 
 /* ---------- admin: accounts and which brands each may see ---------- */
 var EDIT=null,ARMED="";
@@ -395,7 +390,7 @@ function boot(){
   $("fAuth").addEventListener("submit",authSubmit);$("auResend").addEventListener("click",resend);
   $("auShow").addEventListener("change",function(){$("auPass").type=$("auShow").checked?"text":"password"});
   $("rsShow").addEventListener("change",function(){$("rsPass").type=$("rsShow").checked?"text":"password"});
-  $("fReset").addEventListener("submit",resetSubmit);$("fPw").addEventListener("submit",pwSubmit);
+  $("fReset").addEventListener("submit",resetSubmit);
   $("btnRetry").addEventListener("click",function(){route(true)});$("gReload").addEventListener("click",function(){route(true)});
   document.addEventListener("click",function(e){var t=e.target&&e.target.closest?e.target.closest("[data-out]"):null;if(t)signOut()});
   Array.prototype.forEach.call(document.querySelectorAll("button.nav[data-pg]"),function(b){b.addEventListener("click",function(){go(b.dataset.pg)})});
